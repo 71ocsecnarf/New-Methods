@@ -1,4 +1,5 @@
 import gmsh
+import os
 
 gmsh.initialize()
 gmsh.model.add("cylinder_surface")
@@ -19,6 +20,8 @@ gmsh.model.occ.synchronize()
 gmsh.model.mesh.setSize(gmsh.model.getEntities(0), lc)
 gmsh.model.mesh.generate(2)
 
-gmsh.write("cylinder_surface.msh")
+current_dir = os.path.dirname(os.path.abspath(__file__))
+output_path = os.path.join(current_dir, "cylinder_surface.msh")
+gmsh.write(output_path)
 gmsh.fltk.run()
 gmsh.finalize()

@@ -1,13 +1,13 @@
 import gmsh
+import os
 
 gmsh.initialize()
 gmsh.model.add("square_surface")
 
-R = 0.50
-H = 1.0
-lc = 0.05
+L = 1.0 
+lc = 0.5 #Mesh size
 
-gmsh.model.occ.add_box(0, 0, 0, 0, 0, H, R)
+gmsh.model.occ.add_rectangle(0, 0, 0, L, L)
 gmsh.model.occ.synchronize()
 
 #!Used for quads:::::::::::::::::::::::::::::::::::::::::
@@ -19,6 +19,9 @@ gmsh.model.occ.synchronize()
 gmsh.model.mesh.setSize(gmsh.model.getEntities(0), lc)
 gmsh.model.mesh.generate(2)
 
-gmsh.write("cylinder_surface.msh")
+current_dir = os.path.dirname(os.path.abspath(__file__))
+output_path = os.path.join(current_dir, "square_surface.msh")
+
+gmsh.write(output_path)
 gmsh.fltk.run()
 gmsh.finalize()
