@@ -10,6 +10,16 @@ lc = 0.25 #Mesh size
 gmsh.model.occ.add_rectangle(0, 0, 0, L, L)
 gmsh.model.occ.synchronize()
 
+N = 5
+
+curves = gmsh.model.getEntities(1)
+for c in curves:
+    gmsh.model.mesh.setTransfiniteCurve(c[1], N)
+
+# Récupérer la surface
+surface = gmsh.model.getEntities(2)[0][1]
+gmsh.model.mesh.setTransfiniteSurface(surface)
+
 #!Used for quads:::::::::::::::::::::::::::::::::::::::::
 # gmsh.option.setNumber("Mesh.SubdivisionAlgorithm", 1)
 # gmsh.option.setNumber("Mesh.RecombineAll", 1)

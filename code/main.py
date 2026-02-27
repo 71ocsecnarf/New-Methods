@@ -9,6 +9,9 @@ def main():
     gmsh.initialize()
     current_dir = os.path.dirname(os.path.abspath(__file__))
     filename = current_dir + "/inputfiles/square_surface.msh"
+    gmsh.open(filename)
+    #*To avoid having gmsh msg in the terminal
+    gmsh.option.setNumber("General.Terminal", 0)
 
     #todo--> do we need to keep this dictionnary ??
     #*The node tag is the key, the value is the NODE object of that node
@@ -51,6 +54,8 @@ def main():
     #*========================================== ^
     #*====USED TO TEST THE ELEMENT LIST========= |
     #*========================================== |
+
+    solver.Check_Obtuse_triangles(element_list)
     gmsh.finalize()
 
 if __name__ == "__main__":

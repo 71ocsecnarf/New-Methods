@@ -11,6 +11,8 @@ class ELEMENT:
         self.node_A = nodes[0]
         self.node_B = nodes[1]
         self.node_C = nodes[2]
+        
+        self.IsObtuse = False
 #todo===========================================
 
 class NODE:

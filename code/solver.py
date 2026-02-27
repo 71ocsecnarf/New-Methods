@@ -9,7 +9,6 @@ def Make_NodeList_NodeDictionary(filename, tag_to_node_obj_dic):
     if not gmsh.isInitialized():
         gmsh.initialize()
     
-    gmsh.open(filename)
     print("\n")
     print("=================================================")
     print("================Making node list=================")
@@ -75,3 +74,25 @@ def Make_ElementList(filename, tag_to_node_obj_dic):
 
     print("Element list is done --> ok")
     return np.array(element_list)
+
+def Check_Obtuse_triangles(element_list):
+
+    print("\n")
+    print("========================================================")
+    print("=============Cheking for obtuse element=================")
+    print("========================================================")
+    counting = 0
+    for e in element_list:
+        AB = np.array([e.node_A.coords[0] - e.node_B.coords[0], e.node_A.coords[1] - e.node_B.coords[1]])
+        AC = np.array([e.node_A.coords[0] - e.node_C.coords[0], e.node_A.coords[1] - e.node_C.coords[1]])
+        BC = np.array([e.node_B.coords[0] - e.node_C.coords[0], e.node_B.coords[1] - e.node_C.coords[1]])
+
+        AB_AC = AB @ AC
+        BC_BA = BC @ (-AB)
+        CA_CB = (-AC) @ (-BC)
+        if min(AB_AC, BC_BA, CA_CB) < 0:
+            e.IsObtuse = True
+            counting += 1
+    
+    print(f"There are {counting} obtuse elements")
+    print("Checking for obtuse element is done --> ok")
