@@ -7,8 +7,10 @@ class MESH:
         pass
 
 class ELEMENT:
-    def __init__(self):
-        pass
+    def __init__(self, nodes):
+        self.node_A = nodes[0]
+        self.node_B = nodes[1]
+        self.node_C = nodes[2]
 #todo===========================================
 
 class NODE:

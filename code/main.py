@@ -14,6 +14,7 @@ def main():
     #*The node tag is the key, the value is the NODE object of that node
     tag_to_node_obj_dic = {}#*dictionary, works with GMSH tag
     node_list = solver.Make_NodeList_NodeDictionary(filename, tag_to_node_obj_dic)
+    element_list = solver.Make_ElementList(filename, tag_to_node_obj_dic)
 
     #*======================================= |
     #*====USED TO TEST THE NODE LIST========= |
@@ -32,6 +33,24 @@ def main():
     #*======================================= |
 
 
+    #*========================================== |
+    #*====USED TO TEST THE ELEMENT LIST========= |
+    #*========================================== V
+    plt.figure()
+    for e in element_list:
+        plt.scatter(e.node_A.coords[0], e.node_A.coords[1], color = 'black')
+        plt.scatter(e.node_B.coords[0], e.node_B.coords[1], color = 'black')
+        plt.scatter(e.node_C.coords[0], e.node_C.coords[1], color = 'black')
+
+        plt.plot([e.node_A.coords[0], e.node_B.coords[0]], [e.node_A.coords[1], e.node_B.coords[1]], color = 'red')
+        plt.plot([e.node_A.coords[0], e.node_C.coords[0]], [e.node_A.coords[1], e.node_C.coords[1]], color = 'red')
+        plt.plot([e.node_C.coords[0], e.node_B.coords[0]], [e.node_C.coords[1], e.node_B.coords[1]], color = 'red')
+        
+
+    plt.show()
+    #*========================================== ^
+    #*====USED TO TEST THE ELEMENT LIST========= |
+    #*========================================== |
     gmsh.finalize()
 
 if __name__ == "__main__":
