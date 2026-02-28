@@ -71,6 +71,11 @@ def Make_ElementList(filename, tag_to_node_obj_dic):
         nodes = [node_a, node_b, node_c]
         element = ELEMENT(nodes)
         element_list.append(element)
+        # Add the triangle to the adjacent triangle list of each node
+        #! I do not know if we will need it
+        node_a.adjacent_triangles.append(element)
+        node_b.adjacent_triangles.append(element)
+        node_c.adjacent_triangles.append(element)
 
     print("Element list is done --> ok")
     return np.array(element_list)
@@ -96,3 +101,8 @@ def Check_Obtuse_triangles(element_list):
     
     print(f"There are {counting} obtuse elements")
     print("Checking for obtuse element is done --> ok")
+
+# Distance confront between nodes
+def __lt__(self, other):
+    return self.dist < other.dist
+# It is necessary for the heap package

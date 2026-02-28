@@ -28,7 +28,7 @@ class NODE:
 
 
         self.adjacent_triangles = []    #TODO List of triangles: 
-                                        #??Should we add that ??
+                                        #??Should we add that ?? - I have added it, in case we will remove it - Fra
 
         #*Attributs for FMM (init here)
         self.dist = float('inf')

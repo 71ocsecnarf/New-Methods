@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 
 import gmsh
 import solver
+import fmm_solver
 
 def main():
     gmsh.initialize()
