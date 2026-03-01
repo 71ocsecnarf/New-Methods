@@ -61,12 +61,48 @@ def fmm_algorithm(node_list, source_nodes):
 
 # It should work, but I am not sure
 
-def eikonal_sol(node):
+# I am following the document, but I think the code can be upgraded
+def eikonal_sol(node, F=1.0):
     """"
     Compute Locally the approximate solution of the Eikonal Equation
     For acute triangles only, for the moment
     """
 
+    # First - Distance initialization
+    new_dist = float('inf')
+
+    # For compute the distance D from all adjacents triangles in 
+    for tri in node.adjacent_triangles:
+        
+        # Identify the other two nodes
+        nodes = [tri.node_A, tri.node_B, tri.node_C]
+        others = [n for n in nodes if n.node_tag != node.node_tag]
+        node_a, node_b = others[0], others[1]
+
+        #! I think it is from here the part we need to change it
+        # Case 1 - Both other nodes are ALIVE
+        if node_a.state == 'ALIVE' and node_b.state == 'ALIVE':
+
+            # I think the document assumes T(A) < T(B), I am following it, but I think we can update it to work faster without the if
+            if node_a.dist > node_b.dist:
+                # If it not the case swap the nodes to be in the condition of the document
+                node_a, node_b = node_b, node_a
+
+            # From definitions
+            u = node_b.dist - node_a.dist
+            # Computations of the lengths of the sides of the triangles
+            #! Is it more efficient to compute the distance each time or compute them once and store them?
+            #! To be asked to the professor, I do not know, maybe if we store them it is more efficient, but it can take a lot of memory, especially with a very big grid
+            
+
+
+
+
+
+
+
+
+
     #! TO BE DONE --> FMM: pag 4 of the document "Computing Geodesic Paths on Manifolds" - Author(s): R. Kimmel and J. A. Sethian
     #! I have some ideas, ill work on it sunday or monday
-    return node.dist
+    return new_dist
