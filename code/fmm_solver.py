@@ -93,16 +93,48 @@ def eikonal_sol(node, F=1.0):
             # Computations of the lengths of the sides of the triangles
             #! Is it more efficient to compute the distance each time or compute them once and store them?
             #! To be asked to the professor, I do not know, maybe if we store them it is more efficient, but it can take a lot of memory, especially with a very big grid
+            # For now I'll just compute them each time
+            a = node.distance_to_other_node(node_b)
+            b = node.distance_to_other_node(node_a)
+            c = node_a.distance_to_other_node(node_b)
+
+            # Computation of the angle theta using the cosine theorem
+            #          a^2 = b^2 + c^2 - 2bc cos_theta 
+            cos_theta = (b**2 + c**2 - a**2) / (2*b*c) 
+            sin_theta = np.sqrt(1-cos_theta)
+
+            # Quadratic equation coefficient
+            A = a**2 + b**2 -2*a*b*cos_theta
+            B = 2*b*u*(a*cos_theta - b)
+            C = b**2 * (u**2 - F**2 * sin_theta**2)
+
+            Delta  = B**2 - 4 * A * C
             
+            t = float('inf') # if there is no solution, the time is infinite - Do not update it
+            # Solve only if Delta >= 0 
+            if Delta >= 0: 
+                t_sol = (-B + np.sqrt(Delta)) / (2 *A)
 
+                # Validity Conditions
+                c1 = u < t_sol
+                c2 = a * cos_theta  <  b * (t_sol - u) / t_sol < a / cos_theta
 
+                if c1 and c2:
+                    # use the solution only if it is acceptable
+                    t = t_sol
+                    dist_c = t + node_a.dist
+                else:
+                    # If the computation fails, it means that the front runs along a border, so it is easy to update the distance
+                    dist_c = min(b * F + node_a.dist, c * F + node_a.dist)
 
+        # Degenerate cases - useful to implement
+        # in these cases we need to compute the 1d distance
+        elif node_a.state == 'ALIVE':
+            dist_c = node_a.dist + node.distance_to_other_node(node_a) * F
+            new_dist = min(new_dist, dist_c)
 
-
-
-
-
-
-    #! TO BE DONE --> FMM: pag 4 of the document "Computing Geodesic Paths on Manifolds" - Author(s): R. Kimmel and J. A. Sethian
-    #! I have some ideas, ill work on it sunday or monday
-    return new_dist
+        elif node_b.state == 'ALIVE':
+            dist_c = node_b.dist + node.distance_to_other_node(node_b) * F
+            new_dist = min(new_dist, dist_c)
+       
+    return dist_c
