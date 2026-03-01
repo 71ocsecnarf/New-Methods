@@ -36,3 +36,8 @@ class NODE:
 
     def distance_to_other_node(self, other_node):
         return np.linalg.norm(self.coords - other_node.coords)
+    
+    # Distance confront between nodes
+    def __lt__(self, other):
+        return self.dist < other.dist
+    # It is necessary for the heap package

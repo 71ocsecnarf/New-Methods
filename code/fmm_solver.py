@@ -28,7 +28,7 @@ def fmm_algorithm(node_list, source_nodes):
             if dist_initial < neighbor.dist:
                 neighbor.dist = dist_initial
                 neighbor.state = 'TRIAL'
-                heapq.heappush(trial_nodes, (neighbor.dis, neighbor.idx, neighbor))
+                heapq.heappush(trial_nodes, (neighbor.dist, neighbor.idx, neighbor))
     
     # ---- Step 2 --> Principal Loop - FMM ---- 
     while trial_nodes:
@@ -54,7 +54,7 @@ def fmm_algorithm(node_list, source_nodes):
                 # Update the trial distance only if it is lower than the previously computed (always true if the node was FAR)
                 # see pag 4
                 if new_dist < old_dist:
-                    neighbor.dist = node.dist
+                    neighbor.dist = new_dist
                     neighbor.state = 'TRIAL' # Set the node status as TRIAL, in case it was FAR
                     heapq.heappush(trial_nodes, (neighbor.dist, neighbor.idx, neighbor))
 
@@ -69,7 +69,7 @@ def eikonal_sol(node, F=1.0):
     """
 
     # First - Distance initialization
-    new_dist = float('inf')
+    dist_c = float('inf')
 
     # For compute the distance D from all adjacents triangles in 
     for tri in node.adjacent_triangles:
@@ -94,19 +94,20 @@ def eikonal_sol(node, F=1.0):
             #! Is it more efficient to compute the distance each time or compute them once and store them?
             #! To be asked to the professor, I do not know, maybe if we store them it is more efficient, but it can take a lot of memory, especially with a very big grid
             # For now I'll just compute them each time
-            a = node.distance_to_other_node(node_b)
-            b = node.distance_to_other_node(node_a)
-            c = node_a.distance_to_other_node(node_b)
+            a = node.distance_to_other_node(node_b)    # BC
+            b = node.distance_to_other_node(node_a)    # AC
+            c = node_a.distance_to_other_node(node_b)  # AB
 
             # Computation of the angle theta using the cosine theorem
             #          a^2 = b^2 + c^2 - 2bc cos_theta 
             cos_theta = (b**2 + c**2 - a**2) / (2*b*c) 
-            sin_theta = np.sqrt(1-cos_theta)
+            sin_theta = np.sqrt(1 - cos_theta**2)
+            #! Possible error if cos_theta > 1 due to numerical errors, gemini suggest to use max(0, 1-cos_theta^2), i do not think it is useful
 
             # Quadratic equation coefficient
             A = a**2 + b**2 -2*a*b*cos_theta
             B = 2*b*u*(a*cos_theta - b)
-            C = b**2 * (u**2 - F**2 * sin_theta**2)
+            C = b**2 * (u**2 - F**2 * a**2 * sin_theta**2)
 
             Delta  = B**2 - 4 * A * C
             
@@ -130,11 +131,16 @@ def eikonal_sol(node, F=1.0):
         # Degenerate cases - useful to implement
         # in these cases we need to compute the 1d distance
         elif node_a.state == 'ALIVE':
-            dist_c = node_a.dist + node.distance_to_other_node(node_a) * F
-            new_dist = min(new_dist, dist_c)
+            dist_1d = node_a.dist + node.distance_to_other_node(node_a) * F  # T(A) + b*F
+            dist_c = min(dist_c, dist_1d)
 
         elif node_b.state == 'ALIVE':
-            dist_c = node_b.dist + node.distance_to_other_node(node_b) * F
-            new_dist = min(new_dist, dist_c)
+            dist_1d = node_b.dist + node.distance_to_other_node(node_b) * F # T(B) + c*F
+            dist_c = min(dist_c, dist_1d)
        
+       #! Can we delete these two elif (and consequently the if at the start) and put them alltogether without checking if the two nodes are alive?
     return dist_c
+
+# To run the code faster it would be ideal, as said before, to compute the distances 
+# of the elements of the triangles diretly in element and here only access them. 
+# I need to search how to do it

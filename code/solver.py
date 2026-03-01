@@ -102,7 +102,3 @@ def Check_Obtuse_triangles(element_list):
     print(f"There are {counting} obtuse elements")
     print("Checking for obtuse element is done --> ok")
 
-# Distance confront between nodes
-def __lt__(self, other):
-    return self.dist < other.dist
-# It is necessary for the heap package
