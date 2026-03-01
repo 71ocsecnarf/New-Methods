@@ -1,5 +1,5 @@
 import numpy as np
-
+import heapq
 
 #todo===========================================
 class MESH:
@@ -8,10 +8,9 @@ class MESH:
 
 class ELEMENT:
     def __init__(self, nodes):
-        self.node_A = nodes[0]
-        self.node_B = nodes[1]
-        self.node_C = nodes[2]
-        
+        #*               A         B         C
+        self.nodes  = [nodes[0], nodes[1], nodes[2]] 
+
         self.IsObtuse = False
 #todo===========================================
 
@@ -37,7 +36,25 @@ class NODE:
     def distance_to_other_node(self, other_node):
         return np.linalg.norm(self.coords - other_node.coords)
     
-    # Distance confront between nodes
     def __lt__(self, other):
         return self.dist < other.dist
-    # It is necessary for the heap package
+
+class TRIAL_BAND:
+    def __init__(self):
+        self.heap = []
+
+    def add_node(self, node):
+        node.state = 'TRIAL'
+        heapq.heappush(self.heap, node)
+
+    def pop_closest(self):
+        while self.heap:
+            node = heapq.heappop(self.heap)
+            if node.state == 'TRIAL':
+                return node
+        return None
+    
+    #* Checks if the heap is empty
+    def is_empty(self):
+        return len(self.heap) == 0
+    

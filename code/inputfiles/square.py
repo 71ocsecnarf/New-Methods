@@ -10,7 +10,8 @@ lc = 0.25 #Mesh size
 gmsh.model.occ.add_rectangle(0, 0, 0, L, L)
 gmsh.model.occ.synchronize()
 
-N = 5
+#*the number of point along the edge
+N = 20
 
 curves = gmsh.model.getEntities(1)
 for c in curves:

@@ -1,8 +1,16 @@
 import numpy as np
 import gmsh
+import matplotlib.pyplot as plt
 
 from structures import NODE
 from structures import ELEMENT
+from structures import TRIAL_BAND
+
+#!==================================================================== |
+#!==================================================================== |
+#!========================= Preprocessing============================= |
+#!==================================================================== |
+#!==================================================================== V
 
 def Make_NodeList_NodeDictionary(filename, tag_to_node_obj_dic):
 
@@ -77,6 +85,11 @@ def Make_ElementList(filename, tag_to_node_obj_dic):
         node_b.adjacent_triangles.append(element)
         node_c.adjacent_triangles.append(element)
 
+        #*Here, i add all the elements a node belong to
+        node_a.adjacent_triangles.append(element)
+        node_b.adjacent_triangles.append(element)
+        node_c.adjacent_triangles.append(element)
+
     print("Element list is done --> ok")
     return np.array(element_list)
 
@@ -88,9 +101,9 @@ def Check_Obtuse_triangles(element_list):
     print("========================================================")
     counting = 0
     for e in element_list:
-        AB = np.array([e.node_A.coords[0] - e.node_B.coords[0], e.node_A.coords[1] - e.node_B.coords[1]])
-        AC = np.array([e.node_A.coords[0] - e.node_C.coords[0], e.node_A.coords[1] - e.node_C.coords[1]])
-        BC = np.array([e.node_B.coords[0] - e.node_C.coords[0], e.node_B.coords[1] - e.node_C.coords[1]])
+        AB = np.array([e.nodes[0].coords[0] - e.nodes[1].coords[0], e.nodes[0].coords[1] - e.nodes[1].coords[1]])
+        AC = np.array([e.nodes[0].coords[0] - e.nodes[2].coords[0], e.nodes[0].coords[1] - e.nodes[2].coords[1]])
+        BC = np.array([e.nodes[1].coords[0] - e.nodes[2].coords[0], e.nodes[1].coords[1] - e.nodes[2].coords[1]])
 
         AB_AC = AB @ AC
         BC_BA = BC @ (-AB)
@@ -100,5 +113,171 @@ def Check_Obtuse_triangles(element_list):
             counting += 1
     
     print(f"There are {counting} obtuse elements")
-    print("Checking for obtuse element is done --> ok")
+    print("Checking for obtuse element is done --> ok\n")
 
+def Compute_Dist_Point_Triangle(P, element):
+
+    A, B, C = [n.coords for n in element.nodes]
+
+    normal = np.cross(B - A, C - A)
+    normal /= np.linalg.norm(normal)
+
+    vec_AP = P - A
+    dist_ortho = np.abs(np.dot(vec_AP, normal))
+    return dist_ortho, normal
+
+def Innit_Origin_Point(target_coords, node_list):
+
+    #*Step 1, i look for the closest node 
+    all_coords = np.array([n.coords for n in node_list])
+    distances = np.linalg.norm(all_coords - target_coords, axis=1)
+    closest_node_idx = np.argmin(distances)
+    closest_node = node_list[closest_node_idx]
+
+    #*Then, i look for the closest element in the neighbors of the closest node
+    best_dist = np.inf
+    target_elem = None
+    best_normal = None
+    for elem in closest_node.adjacent_triangles:
+        dist_to_elem, normal = Compute_Dist_Point_Triangle(target_coords, elem)
+        if dist_to_elem < best_dist:
+            best_dist = dist_to_elem
+            target_elem = elem
+            best_normal = normal
+
+    
+    for node in target_elem.nodes:
+        node.dist = np.linalg.norm(node.coords - target_coords)
+        print(f"Node {node.node_tag} innitialized at d={node.dist:.4f}")
+
+    projected_point = target_coords - best_dist*best_normal
+    return projected_point, target_elem
+
+
+#!===================================================================== |
+#!===================================================================== |
+#!======================== FFM BELOW ================================== |
+#!===================================================================== |
+#!===================================================================== V
+
+def Innit_FFM(target_coords, target_elem):
+    trial_band = TRIAL_BAND()
+    for n in target_elem.nodes:
+        n.dist = np.linalg.norm(n.coords - target_coords)
+        n.state = 'TRIAL'
+        trial_band.add_node(n)
+    return trial_band
+
+def FMM(trial_band):
+    print("=================================================")
+    print("========== Running Fast Marching Method =========")
+    print("=================================================\n")
+
+    while not trial_band.is_empty():
+
+        ui = trial_band.pop_closest()
+        if ui is None: break
+        ui.state = 'ALIVE'
+
+        #* Looping over the neighbors
+        for uj in ui.neighbors:
+            if uj.state != 'ALIVE':
+
+                new_dist = Update_Node_Distance(uj)
+                
+                if new_dist < uj.dist:
+                    uj.dist = new_dist
+                    trial_band.add_node(uj)
+
+    print("FMM succesfully finished.\n")
+
+
+def Update_Node_Distance(node):
+    t_min = np.inf
+
+    for elem in node.adjacent_triangles:
+        
+        C = node
+        others = [n for n in elem.nodes if n != node]
+        A, B = others[0], others[1]
+
+
+        if A.state == 'ALIVE' and B.state == 'ALIVE':
+            #!I make sure to use the paper convention, We want Ta < Tb and we look for Tc
+            if(A.dist < B.dist):
+                t_local = Solve_Eikonal_Triangle(A.coords, B.coords, C.coords, A.dist, B.dist)
+            else:
+                t_local = Solve_Eikonal_Triangle(B.coords, A.coords, C.coords, B.dist, A.dist)
+        elif A.state == 'ALIVE':
+            t_local = A.dist + np.linalg.norm(C.coords - A.coords)
+        elif B.state == 'ALIVE':
+            t_local = B.dist + np.linalg.norm(C.coords - B.coords)
+        else:   
+            continue
+
+        if t_local < t_min:
+            t_min = t_local
+                
+    return t_min
+
+def Solve_Eikonal_Triangle(A_coords, B_coords, C_coords, Ta, Tb):
+    F = 1
+
+    La = np.linalg.norm(B_coords - C_coords) 
+    Lb = np.linalg.norm(A_coords - C_coords)  
+    Lc = np.linalg.norm(A_coords - B_coords)  
+
+    u = Tb - Ta  #* Ta <= Tb is always true when i call Solve_Eikonal_Triangle()
+
+    CA = A_coords - C_coords
+    CB = B_coords - C_coords
+    cosTheta = np.dot(CA, CB) / (Lb * La)#*Cos of angle C
+    sinTheta = np.sqrt(1 - cosTheta**2)
+
+    #*2nd order equation from the paper
+    coef_a = La**2 + Lb**2 - 2*La*Lb*cosTheta  # = Lc²
+    coef_b = 2 * Lb * u * (La * cosTheta - Lb)
+    coef_c = Lb**2 * (u**2 - F**2 * La**2 * sinTheta**2)
+
+    delta = coef_b**2 - 4*coef_a*coef_c
+
+    if delta >= 0:
+        #! here i choose the larger root --> is it ok?
+        t = (-coef_b + np.sqrt(delta)) / (2*coef_a)
+        Tc = Ta + t
+
+        if u < t and La*cosTheta < Lb*(t - u)/t < La/cosTheta:
+            return Tc
+        else:
+            return min(Lb*F + Ta, Lc*F + Tb)
+        
+    #*Otherwise, we move along the edge
+    return min(Ta + Lb*F, Tb + La*F)
+
+def Plot_Isolines(node_list, element_list):
+
+    x = np.array([n.coords[0] for n in node_list])
+    y = np.array([n.coords[1] for n in node_list])
+    z = np.array([n.dist for n in node_list])
+
+    levels = 20
+    triangles = []
+    for e in element_list:
+        triangles.append([n.idx for n in e.nodes])
+    triangles = np.array(triangles)
+
+    plt.figure(figsize=(8, 6))
+    plt.gca().set_aspect('equal')
+
+    cntr = plt.tricontourf(x, y, triangles, z, levels=levels, cmap="viridis")
+    plt.colorbar(cntr, label="Distance")
+
+    lines = plt.tricontour(x, y, triangles, z, levels=levels, colors='white', linewidths=0.5)
+    plt.clabel(lines, inline=True, fontsize=8) # Ajoute les valeurs sur les lignes
+
+    plt.triplot(x, y, triangles, color='black', alpha=0.1, linewidth=0.5)
+
+    plt.title("Isolignes de la distance (FMM)")
+    plt.xlabel("X")
+    plt.ylabel("Y")
+    plt.show()
