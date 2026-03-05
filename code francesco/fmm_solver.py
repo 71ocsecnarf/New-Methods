@@ -74,9 +74,12 @@ def eikonal_sol(node, F=1.0):
     # For compute the distance D from all adjacents triangles in 
     for tri in node.adjacent_triangles:
         
-        # Identify the other two nodes
-        nodes = [tri.node_A, tri.node_B, tri.node_C]
-        others = [n for n in nodes if n.node_tag != node.node_tag]
+        nodes_in_tri = tri.nodes 
+        
+        others = [n for n in nodes_in_tri if n.node_tag != node.node_tag]
+        
+        # Ora puoi assegnare node_a e node_b in sicurezza
+        node_a, node_b = others[0], others[1]
         node_a, node_b = others[0], others[1]
 
         #! I think it is from here the part we need to change it
