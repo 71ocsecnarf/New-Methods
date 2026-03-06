@@ -85,11 +85,6 @@ def Make_ElementList(filename, tag_to_node_obj_dic):
         node_b.adjacent_triangles.append(element)
         node_c.adjacent_triangles.append(element)
 
-        #*Here, i add all the elements a node belong to
-        node_a.adjacent_triangles.append(element)
-        node_b.adjacent_triangles.append(element)
-        node_c.adjacent_triangles.append(element)
-
     print("Element list is done --> ok")
     return np.array(element_list)
 
@@ -154,106 +149,6 @@ def Innit_Origin_Point(target_coords, node_list):
     return projected_point, target_elem
 
 
-#!===================================================================== |
-#!===================================================================== |
-#!======================== FFM BELOW ================================== |
-#!===================================================================== |
-#!===================================================================== V
-
-def Innit_FFM(target_coords, target_elem):
-    trial_band = TRIAL_BAND()
-    for n in target_elem.nodes:
-        n.dist = np.linalg.norm(n.coords - target_coords)
-        n.state = 'TRIAL'
-        trial_band.add_node(n)
-    return trial_band
-
-def FMM(trial_band):
-    print("=================================================")
-    print("========== Running Fast Marching Method =========")
-    print("=================================================\n")
-
-    while not trial_band.is_empty():
-
-        ui = trial_band.pop_closest()
-        if ui is None: break
-        ui.state = 'ALIVE'
-
-        #* Looping over the neighbors
-        for uj in ui.neighbors:
-            if uj.state != 'ALIVE':
-
-                new_dist = Update_Node_Distance(uj)
-                
-                if new_dist < uj.dist:
-                    uj.dist = new_dist
-                    trial_band.add_node(uj)
-
-    print("FMM succesfully finished.\n")
-
-
-def Update_Node_Distance(node):
-    t_min = np.inf
-
-    for elem in node.adjacent_triangles:
-        
-        C = node
-        others = [n for n in elem.nodes if n != node]
-        A, B = others[0], others[1]
-
-
-        if A.state == 'ALIVE' and B.state == 'ALIVE':
-            #!I make sure to use the paper convention, We want Ta < Tb and we look for Tc
-            if(A.dist < B.dist):
-                t_local = Solve_Eikonal_Triangle(A.coords, B.coords, C.coords, A.dist, B.dist)
-            else:
-                t_local = Solve_Eikonal_Triangle(B.coords, A.coords, C.coords, B.dist, A.dist)
-        elif A.state == 'ALIVE':
-            t_local = A.dist + np.linalg.norm(C.coords - A.coords)
-        elif B.state == 'ALIVE':
-            t_local = B.dist + np.linalg.norm(C.coords - B.coords)
-        else:   
-            continue
-
-        if t_local < t_min:
-            t_min = t_local
-                
-    return t_min
-
-def Solve_Eikonal_Triangle(A_coords, B_coords, C_coords, Ta, Tb):
-    F = 1
-
-    La = np.linalg.norm(B_coords - C_coords) 
-    Lb = np.linalg.norm(A_coords - C_coords)  
-    Lc = np.linalg.norm(A_coords - B_coords)  
-
-    u = Tb - Ta  #* Ta <= Tb is always true when i call Solve_Eikonal_Triangle()
-
-    CA = A_coords - C_coords
-    CB = B_coords - C_coords
-    cosTheta = np.dot(CA, CB) / (Lb * La)#*Cos of angle C
-    sinTheta = np.sqrt(1 - cosTheta**2)
-
-    #*2nd order equation from the paper
-    coef_a = La**2 + Lb**2 - 2*La*Lb*cosTheta  # = Lc²
-    coef_b = 2 * Lb * u * (La * cosTheta - Lb)
-    coef_c = Lb**2 * (u**2 - F**2 * La**2 * sinTheta**2)
-
-    delta = coef_b**2 - 4*coef_a*coef_c
-
-    if delta >= 0:
-        #! here i choose the larger root --> is it ok?
-        t = (-coef_b + np.sqrt(delta)) / (2*coef_a)
-        Tc = Ta + t
-
-        if u < t and La*cosTheta < Lb*(t - u)/t < La/cosTheta:
-            return Tc
-        else:
-            return min(Lb*F + Ta, Lc*F + Tb)
-        
-    #*Otherwise, we move along the edge
-    return min(Ta + Lb*F, Tb + La*F)
-
 def Plot_Isolines(node_list, element_list):
 
     x = np.array([n.coords[0] for n in node_list])
@@ -281,3 +176,4 @@ def Plot_Isolines(node_list, element_list):
     plt.xlabel("X")
     plt.ylabel("Y")
     plt.show()
+

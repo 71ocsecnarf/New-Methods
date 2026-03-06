@@ -29,7 +29,7 @@ def main():
 
     fmm_solver.fmm_algorithm(node_list, source_nodes)
     
-    print("Calcul terminé, génération du tracé...")
+    print("Computation Completed, Trace Generation ...")
     solver.Plot_Isolines(node_list, element_list)
     
     gmsh.finalize()
