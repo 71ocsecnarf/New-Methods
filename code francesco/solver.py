@@ -149,6 +149,57 @@ def Innit_Origin_Point(target_coords, node_list):
     return projected_point, target_elem
 
 
+def compute_err (node_list, source_coord):
+    # I thought to compute the error between the source and a random point, 
+    # but AI suggested me to compute the global error, which makes sense
+
+    #! Now the error is computed using direct lines since we are on a plane,
+    #! when we will go to 3D surfaces we will need to modify this function
+
+    errors = []
+    errors_rel = []
+
+    for node in node_list:
+        # Exact distance computation
+        ex_dist = np.linalg.norm(node.coords - source_coord)
+
+        # Error computation - we can compute it in many ways
+        err_i = abs(ex_dist - node.dist)
+
+        errors.append(err_i)
+        errors_rel.append(err_i/ex_dist)
+
+    # Max error - absolute value
+    err = np.max(errors) 
+    # Max relative error
+    err_rel = np.max(errors_rel)
+    # Norm L2 err
+    e_l2 = np.sqrt(np.mean(np.array(errors)**2))
+
+    return err, err_rel, e_l2
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+######################################
+## ------------- PLOTS ------------ ##
+######################################
+
 def Plot_Isolines(node_list, element_list):
 
     x = np.array([n.coords[0] for n in node_list])
@@ -172,8 +223,29 @@ def Plot_Isolines(node_list, element_list):
 
     plt.triplot(x, y, triangles, color='black', alpha=0.1, linewidth=0.5)
 
-    plt.title("Isolignes de la distance (FMM)")
+    plt.title("FMM - Plot of the levelsets")
     plt.xlabel("X")
     plt.ylabel("Y")
     plt.show()
 
+def plot_convergence(h_values, err_inf, method_name):
+    # Plot of the convergence graphs
+    # input the name to use it multiple times when we will need to compare multiple methods
+
+    h_arr = np.array(h_values) #convert it to an array from a phtyon list
+    # I do not know why it is necessary
+
+    plt.figure(100, figsize=(8,6))
+    
+    plt.loglog(h_arr, err_inf, 'o-', label = method_name)
+
+    # Print some reference slopes
+    plt.loglog(h_arr, h_arr,      '--', color='gray', label='O(h)')
+    plt.loglog(h_arr, h_arr**2,   '--', color='black', label='O(h²)')
+
+    plt.xlabel('h (mesh size)')
+    plt.ylabel('Error')
+    plt.title('FMM Convergence')
+    plt.legend()
+    plt.grid(True, which='both')
+    plt.show()
