@@ -5,7 +5,7 @@ gmsh.initialize()
 gmsh.model.add("square_surface")
 
 L = 1.0 
-lc = 0.25 #Mesh size
+lc = 0.025 #Mesh size
 
 gmsh.model.occ.add_rectangle(0, 0, 0, L, L)
 gmsh.model.occ.synchronize()

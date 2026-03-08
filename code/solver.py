@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from structures import NODE
 from structures import ELEMENT
 from structures import TRIAL_BAND
+from structures import EDGE
 
 #!==================================================================== |
 #!==================================================================== |
@@ -81,9 +82,6 @@ def Make_ElementList(filename, tag_to_node_obj_dic):
         element_list.append(element)
         # Add the triangle to the adjacent triangle list of each node
         #! I do not know if we will need it
-        node_a.adjacent_triangles.append(element)
-        node_b.adjacent_triangles.append(element)
-        node_c.adjacent_triangles.append(element)
 
         #*Here, i add all the elements a node belong to
         node_a.adjacent_triangles.append(element)
@@ -93,6 +91,27 @@ def Make_ElementList(filename, tag_to_node_obj_dic):
     print("Element list is done --> ok")
     return np.array(element_list)
 
+def Make_EdgeList(element_list):
+    edge_dict = {}  # key = (min_tag, max_tag)
+    
+    for elem in element_list:
+        nodes = elem.nodes
+        pairs = [(nodes[0], nodes[1]), 
+                 (nodes[1], nodes[2]), 
+                 (nodes[0], nodes[2])]
+        
+        for na, nb in pairs:
+            key = (min(na.node_tag, nb.node_tag), 
+                   max(na.node_tag, nb.node_tag))
+            
+            if key not in edge_dict:
+                edge = EDGE(na, nb)
+                edge_dict[key] = edge
+            
+            edge_dict[key].adjacent_triangles.append(elem)
+            elem.edges.append(edge_dict[key])
+    
+    ##return list(edge_dict.values())
 def Check_Obtuse_triangles(element_list):
 
     print("\n")
@@ -108,7 +127,7 @@ def Check_Obtuse_triangles(element_list):
         AB_AC = AB @ AC
         BC_BA = BC @ (-AB)
         CA_CB = (-AC) @ (-BC)
-        if min(AB_AC, BC_BA, CA_CB) < 0:
+        if min(AB_AC, BC_BA, CA_CB) < -1e-6:
             e.IsObtuse = True
             counting += 1
     
@@ -205,8 +224,10 @@ def Update_Node_Distance(node):
         if A.state == 'ALIVE' and B.state == 'ALIVE':
             #!I make sure to use the paper convention, We want Ta < Tb and we look for Tc
             if(A.dist < B.dist):
-                t_local = Solve_Eikonal_Triangle(A.coords, B.coords, C.coords, A.dist, B.dist)
+                #t_local = Solve_Eikonal_Triangle(A.coords, B.coords, C.coords, A.dist, B.dist)
+                t_local = Solve_Eikonal_Triangle_Order2(A.coords, B.coords, C.coords, A.dist, B.dist, 2)
             else:
+                t_local = Solve_Eikonal_Triangle_Order2(A.coords, B.coords, C.coords, A.dist, B.dist, 2)
                 t_local = Solve_Eikonal_Triangle(B.coords, A.coords, C.coords, B.dist, A.dist)
         elif A.state == 'ALIVE':
             t_local = A.dist + np.linalg.norm(C.coords - A.coords)
@@ -242,15 +263,15 @@ def Solve_Eikonal_Triangle(A_coords, B_coords, C_coords, Ta, Tb):
     delta = coef_b**2 - 4*coef_a*coef_c
 
     if delta >= 0:
-        #! here i choose the larger root --> is it ok?
-        t = (-coef_b + np.sqrt(delta)) / (2*coef_a)
-        Tc = Ta + t
+        t = (-coef_b + np.sqrt(delta)) / (2 * coef_a)
+        if t > u:  # upwind
+            b_t_u_over_t = Lb * (t - u) / t
+            lower = La * cosTheta
+            upper = La / cosTheta if abs(cosTheta) > 1e-10 else np.inf
+            if lower < b_t_u_over_t < upper:
+                return Ta + t
 
-        if u < t and La*cosTheta < Lb*(t - u)/t < La/cosTheta:
-            return Tc
-        else:
-            return min(Lb*F + Ta, Lc*F + Tb)
-        
+    return min(Ta + Lb*F, Tb + La*F)   
     #*Otherwise, we move along the edge
     return min(Ta + Lb*F, Tb + La*F)
 
@@ -281,3 +302,91 @@ def Plot_Isolines(node_list, element_list):
     plt.xlabel("X")
     plt.ylabel("Y")
     plt.show()
+
+
+
+# def Solve_Eikonal_Triangle_Sphere(A_coords, B_coords, C_coords, Ta, Tb):
+#     F = 1
+
+#     La = np.linalg.norm(B_coords - C_coords) 
+#     Lb = np.linalg.norm(A_coords - C_coords)  
+#     Lc = np.linalg.norm(A_coords - B_coords)  
+
+#     u = Tb - Ta  #* Ta <= Tb is always true when i call Solve_Eikonal_Triangle_Sphere()
+#     if u < 1e-6: u = -1e-12
+#     CA = A_coords - C_coords
+#     CB = B_coords - C_coords
+
+#     CA_norm = np.linalg.norm(CA)
+
+#     xa = Lb
+#     ya = 0.0
+
+#     xb = np.dot(CB, CA) / Lb
+#     yb = np.sqrt(La**2 - xb**2)
+
+#     z0 = (xb**2 + yb**2 + u**2 - xa**2 - ya**2) / (2 * u)
+    
+#     coef_a = 1.0
+#     coef_b = -2 * z0
+#     coef_c = -(xa**2 + ya**2)
+
+#     delta = coef_b**2 - 4*coef_a*coef_c
+
+#     if delta >= 0:
+#         t = (-coef_b + np.sqrt(delta)) / (2*coef_a)
+#         Tc = Ta + t
+#         print(Tc, Ta, Tb)
+
+#         if u < t:
+#             return Tc
+#         else:
+#             return min(Lb*F + Ta, La*F + Tb)
+
+#     #*Otherwise, we move along the edge
+#     return min(Ta + Lb*F, Tb + La*F)
+
+def Solve_Eikonal_Triangle_Order2(A_coords, B_coords, C_coords, Ta, Tb, kappa):
+    F = 1.0
+    
+    CA = A_coords - C_coords
+    CB = B_coords - C_coords
+    Lb = np.linalg.norm(CA)  # AC
+    La = np.linalg.norm(CB)  # BC
+    
+    xa = Lb
+    xb = np.dot(CB, CA) / Lb
+    yb_sq = La**2 - xb**2
+    if yb_sq < 1e-12:
+        return min(Ta + Lb*F, Tb + La*F)
+    yb = np.sqrt(yb_sq)
+    
+    A_eff = Ta - (kappa/2) * xa**2
+    B_eff = Tb - (kappa/2) * (xb**2 + yb**2)
+    
+    N = 1.0 - xb/xa
+    M = B_eff - A_eff * (xb/xa)
+    
+    coef_a = 1/xa**2 + N**2/yb**2
+    coef_b = -2*A_eff/xa**2 - 2*M*N/yb**2
+    coef_c = A_eff**2/xa**2 + M**2/yb**2 - 1
+    
+    delta = coef_b**2 - 4*coef_a*coef_c
+    
+    if delta < 0:
+        return min(Ta + Lb*F, Tb + La*F)
+    
+    Tc = (-coef_b + np.sqrt(delta)) / (2*coef_a)
+    
+    t = Tc - Ta
+    u = Tb - Ta
+    cosTheta = np.dot(CA, CB) / (Lb * La)
+
+    if t > u:
+        b_t_u_over_t = Lb * (t - u) / t
+        lower = La * cosTheta
+        upper = La / cosTheta if abs(cosTheta) > 1e-10 else np.inf
+        if lower < b_t_u_over_t < upper:
+            return Tc
+    
+    return min(Ta + Lb*F, Tb + La*F)

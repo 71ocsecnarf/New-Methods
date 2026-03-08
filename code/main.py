@@ -19,6 +19,7 @@ def main():
     tag_to_node_obj_dic = {}#*dictionary, works with GMSH tag
     node_list = solver.Make_NodeList_NodeDictionary(filename, tag_to_node_obj_dic)
     element_list = solver.Make_ElementList(filename, tag_to_node_obj_dic)
+    solver.Make_EdgeList(element_list)
 
     #*======================================= |
     #*====USED TO TEST THE NODE LIST========= |
@@ -37,7 +38,7 @@ def main():
     #*======================================= |
 
     solver.Check_Obtuse_triangles(element_list)
-    target_coords = np.array([0.6, 0.85, 0.1])
+    target_coords = np.array([0.50, 0.5, 0.1])
     source_point, target_elem = solver.Innit_Origin_Point(target_coords, node_list)
 
     #*========================================== |

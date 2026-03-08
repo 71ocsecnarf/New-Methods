@@ -2,16 +2,19 @@ import numpy as np
 import heapq
 
 #todo===========================================
-class MESH:
-    def __init__(self):
-        pass
-
 class ELEMENT:
     def __init__(self, nodes):
         #*               A         B         C
         self.nodes  = [nodes[0], nodes[1], nodes[2]] 
+        self.edges = []
 
         self.IsObtuse = False
+
+class EDGE:
+    def __init__(self, node_a, node_b):
+        self.nodes = (node_a, node_b)
+        self.kappa = 0.0
+        self.adjacent_triangles = []
 #todo===========================================
 
 class NODE:
