@@ -7,7 +7,7 @@ def generate_mesh(N, L, mesh_type, output_dir):
     
     # I'll do it in this way to incorporate other meshes in future
     if mesh_type == 'square_surface':
-        gmsh.model.add_recctange(0, 0, 0, L, L)
+        gmsh.model.occ.add_rectangle(0, 0, 0, L, L)
         gmsh.model.occ.synchronize()
 
         curves = gmsh.model.getEntities(1)
@@ -34,7 +34,7 @@ def generate_mesh(N, L, mesh_type, output_dir):
     output_path = os.path.join(current_dir, filename)
 
     gmsh.write(output_path)
-    gmsh.fltk.run()
+    # gmsh.fltk.run()
     gmsh.finalize()
 
     return output_path

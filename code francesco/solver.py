@@ -248,4 +248,5 @@ def plot_convergence(h_values, err_inf, method_name):
     plt.title('FMM Convergence')
     plt.legend()
     plt.grid(True, which='both')
+    plt.gca().invert_xaxis()
     plt.show()
