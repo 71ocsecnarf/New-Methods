@@ -1,6 +1,7 @@
 import numpy as np
 import os
 import matplotlib.pyplot as plt
+import time
 
 import gmsh
 import solver
@@ -13,9 +14,8 @@ def main():
     # ----> A - CLOSE ALL TABS - <----
     plt.close('all')
 
-
     # ----> B - INITIALIZATION - <----
-    N_values = [5 * 2**i for i in range(6)]
+    N_values = [5 * 2**i for i in range(9)]
     source_coord = np.array([0.0, 0.0, 0.0])
     mesh_type = 'square_surface'    
 
@@ -29,11 +29,12 @@ def main():
 
     # ----> C - LOOP - <----
 
-    for N in N_values:
+    for i, N in enumerate(N_values):
 
+        
         # Print the current computation
         print(f"\n{'='*50}")
-        print(f"Running N={N}  -->  h={1.0/(N-1):.4f}")
+        print(f"Running N={N}  -->  h={1.0/(N-1):.4f}, Iteration {i+1}")
         print(f"{'='*50}")
 
         # 1 ---> Mesh Generation
@@ -51,21 +52,32 @@ def main():
         node_list = solver.Make_NodeList_NodeDictionary(output_path, tag_to_node_obj_dic)
         element_list = solver.Make_ElementList(output_path, tag_to_node_obj_dic)
 
-        solver.Check_Obtuse_triangles(element_list)
+        # solver.Check_Obtuse_triangles(element_list)
 
         # 4 ---> Source initialization
         source_point, target_elem = solver.Innit_Origin_Point(source_coord, node_list)
         source_nodes = target_elem.nodes
 
         # 5 ---> FMM Algorithm
+        print()
+        print('========================================================')
+        print('================= Fast Marching Method =================')
+        print('========================================================')
+
+        t_start = time.time()
         fmm_solver.fmm_algorithm(node_list, source_nodes)
+        t_end = time.time()
+
+        print()
+        print(f"FMM Elapsed time: {t_end - t_start:.4f} s")
+        print()
 
         # 6 ---> Error Computation
         err, err_rel, e_l2 = solver.compute_err(node_list,source_coord)
         print(f"Max error = {err:.6e}  | Max Relative Error = {err_rel}   | L2 error = {e_l2:.6e}")
 
         # 7 ---> Save the results
-        h_values.append(1.0/(N-1)) #! I do not know how to properly compute h, AI says like this
+        h_values.append(L/(N-1)) #! I do not know how to properly compute h, AI says like this
         errors.append(err)
         rel_errors.append(err_rel)
         errors_l2.append(e_l2)
@@ -83,9 +95,8 @@ def main():
     '''
 
     method_name = 'FMM'
-    solver.plot_convergence(h_values, errors_l2, method_name)
+    solver.plot_convergence(h_values, errors, method_name)
     
-
 
 
 

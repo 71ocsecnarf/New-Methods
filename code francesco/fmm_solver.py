@@ -1,13 +1,16 @@
 import numpy as np
 import heapq
+import time
 
 def fmm_algorithm(node_list, source_nodes):
     """
         From the source nodes, fmm_algoritm runs the FMM
     """
 
+    print('FMM running ...')
+    print()
+
     # ---- Step 1 --> Initialization ----
-    
     trial_nodes = []
 
     # Source nodes
