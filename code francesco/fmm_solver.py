@@ -12,23 +12,26 @@ def fmm_algorithm(node_list, source_nodes):
 
     # Source nodes
     for node in source_nodes:
-        node.dist = 0.0
+        assert node.dist < float('inf'), f"Source node {node.node_tag} has dist=inf!"
         node.state = 'ALIVE'
 
     # Set the sources neighbor nodes as trial - Creation of the narrow band
-    for node in source_nodes:
-        for neighbor in node.neighbors:
+    for source in source_nodes:
+        for neighbor in source.neighbors:
             # Computation of preliminary distance 
             #! is it ok if we compute it as the euclidean one for starting?
             #! To be asked to the professor
-            dist_initial = node.distance_to_other_node(neighbor)
-            #! is it used correctly?
+            if neighbor.state != 'ALIVE':
+                new_dist = eikonal_sol(neighbor)
+                #! is it used correctly?
+                if new_dist == float('inf'):
+                 #! is this if necessary? to be asked the professor
+                    new_dist = neighbor.distance_to_other_node(source) + source.dist
 
-            #! is this if necessary? to be asked the professor
-            if dist_initial < neighbor.dist:
-                neighbor.dist = dist_initial
-                neighbor.state = 'TRIAL'
-                heapq.heappush(trial_nodes, (neighbor.dist, neighbor.idx, neighbor))
+                if new_dist < neighbor.dist:
+                    neighbor.dist = new_dist
+                    neighbor.state = 'TRIAL'
+                    heapq.heappush(trial_nodes, (neighbor.dist, neighbor.idx, neighbor))
     
     # ---- Step 2 --> Principal Loop - FMM ---- 
     while trial_nodes:
@@ -69,14 +72,14 @@ def eikonal_sol(node, F=1.0):
     """
 
     # First - Distance initialization
-    dist_c = float('inf')
+    dist = float('inf')
 
     # For compute the distance D from all adjacents triangles in 
     for tri in node.adjacent_triangles:
         
-        # Identify the other two nodes
-        nodes = [tri.node_A, tri.node_B, tri.node_C]
-        others = [n for n in nodes if n.node_tag != node.node_tag]
+        nodes_in_tri = tri.nodes
+        others = [n for n in nodes_in_tri if n.node_tag != node.node_tag]
+    
         node_a, node_b = others[0], others[1]
 
         #! I think it is from here the part we need to change it
@@ -100,8 +103,8 @@ def eikonal_sol(node, F=1.0):
 
             # Computation of the angle theta using the cosine theorem
             #          a^2 = b^2 + c^2 - 2bc cos_theta 
-            cos_theta = (b**2 + c**2 - a**2) / (2*b*c) 
-            sin_theta = np.sqrt(1 - cos_theta**2)
+            cos_theta = np.clip((b**2 - c**2 + a**2) / (2*b*c), -1.0, 1.0)
+            sin_theta = np.sqrt(1 - cos_theta**2)   
             #! Possible error if cos_theta > 1 due to numerical errors, gemini suggest to use max(0, 1-cos_theta^2), i do not think it is useful
 
             # Quadratic equation coefficient
@@ -110,36 +113,35 @@ def eikonal_sol(node, F=1.0):
             C = b**2 * (u**2 - F**2 * a**2 * sin_theta**2)
 
             Delta  = B**2 - 4 * A * C
-            
             t = float('inf') # if there is no solution, the time is infinite - Do not update it
+           
             # Solve only if Delta >= 0 
             if Delta >= 0: 
                 t_sol = (-B + np.sqrt(Delta)) / (2 *A)
 
-                # Validity Conditions
-                c1 = u < t_sol
-                c2 = a * cos_theta  <  b * (t_sol - u) / t_sol < a / cos_theta
+                #! Check that t_sol can be very small
+                if t_sol > 1e-12 and u < t_sol:
+                    cond = b * (t_sol - u) / t_sol
+                    if 0 < cond < c:
+                        t = t_sol + node_a.dist
 
-                if c1 and c2:
-                    # use the solution only if it is acceptable
-                    t = t_sol
-                    dist_c = t + node_a.dist
-                else:
-                    # If the computation fails, it means that the front runs along a border, so it is easy to update the distance
-                    dist_c = min(b * F + node_a.dist, c * F + node_a.dist)
+            if t == float('inf'):
+                t = min(b * F + node_a.dist, a * F + node_b.dist)
+
+            dist = min(dist, t)
 
         # Degenerate cases - useful to implement
         # in these cases we need to compute the 1d distance
         elif node_a.state == 'ALIVE':
             dist_1d = node_a.dist + node.distance_to_other_node(node_a) * F  # T(A) + b*F
-            dist_c = min(dist_c, dist_1d)
+            dist = min(dist, dist_1d)
 
         elif node_b.state == 'ALIVE':
             dist_1d = node_b.dist + node.distance_to_other_node(node_b) * F # T(B) + c*F
-            dist_c = min(dist_c, dist_1d)
+            dist = min(dist, dist_1d)
        
        #! Can we delete these two elif (and consequently the if at the start) and put them alltogether without checking if the two nodes are alive?
-    return dist_c
+    return dist
 
 # To run the code faster it would be ideal, as said before, to compute the distances 
 # of the elements of the triangles diretly in element and here only access them. 
