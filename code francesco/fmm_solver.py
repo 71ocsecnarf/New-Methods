@@ -5,6 +5,12 @@ def fmm_algorithm(node_list, source_nodes):
     """
         From the source nodes, fmm_algoritm runs the FMM
     """
+    
+    # Internal function to avoid multiple push and get a very long list of values
+    def heap_push(node, dist):
+        if dist < best_dist_in_heap.get(node.idx, float('inf')):
+            best_dist_in_heap[node.idx] = dist
+            heapq.heappush(trial_nodes, (dist, node.idx, node))
 
     print('FMM running ...')
     print()
@@ -17,16 +23,16 @@ def fmm_algorithm(node_list, source_nodes):
     for node in source_nodes:
         assert node.dist < float('inf'), f"Source node {node.node_tag} has dist=inf!"
         node.state = 'ALIVE'
-
-    # Internal function to avoid multiple push and get a very long list of values
-    def heap_push(node, dist):
-        if dist < best_dist_in_heap.get(node.idx, float('inf')):
-            best_dist_in_heap[node.idx] = dist
-            heapq.heappush(trial_nodes, (dist, node.idx, node))
-
+    
+    for node in node_list:
+        if node.state == 'TRIAL':
+            heap_push(node, node.dist)
+    
     # Set the sources neighbor nodes as trial - Creation of the narrow band
     for source in source_nodes:
         for neighbor in source.neighbors:
+            if neighbor.state == 'ALIVE':  # salta source e già processati
+                continue
             # Computation of preliminary distance 
             #! is it ok if we compute it as the euclidean one for starting?
             #! To be asked to the professor
@@ -163,33 +169,41 @@ def fmm_algorithm_circ(node_list, source_nodes):
         From the source nodes, fmm_algoritm runs the FMM
     """
 
+     # Internal function to avoid multiple push and get a very long list of values
+    def heap_push(node, dist):
+        if dist < best_dist_in_heap.get(node.idx, float('inf')):
+            best_dist_in_heap[node.idx] = dist
+            heapq.heappush(trial_nodes, (dist, node.idx, node))
+
     print('FMM running ...')
     print()
 
     # ---- Step 1 --> Initialization ----
     trial_nodes = []
     best_dist_in_heap = {}
+    edge_curvature = {}  # Global dictionary containing all edges and the curvature of the front on it
+                         # (indx_A indx_B)  ---> k (curvature)
 
     # Mark source nodes as ALIVE before anything else
     for node in source_nodes:
         assert node.dist < float('inf'), f"Source node {node.node_tag} has dist=inf!"
         node.state = 'ALIVE'
 
-    # Internal function to avoid multiple push and get a very long list of values
-    def heap_push(node, dist):
-        if dist < best_dist_in_heap.get(node.idx, float('inf')):
-            best_dist_in_heap[node.idx] = dist
-            heapq.heappush(trial_nodes, (dist, node.idx, node))
+    for node in node_list:
+        if node.state == 'TRIAL':
+            heap_push(node, node.dist)
+
 
     # Set the sources neighbor nodes as trial - Creation of the narrow band
     for source in source_nodes:
         for neighbor in source.neighbors:
             # Computation of preliminary distance 
+            if neighbor.state == 'ALIVE':  # salta source e già processati
+                continue
             #! is it ok if we compute it as the euclidean one for starting?
             #! To be asked to the professor
             if neighbor.state != 'ALIVE':
-                new_dist = eikonal_sol_circ(neighbor)
-                #! is it used correctly?
+                new_dist = eikonal_sol_circ(neighbor, edge_curvature)
                 if new_dist == float('inf'):
                  #! is this if necessary? to be asked the professor
                     new_dist = neighbor.distance_to_other_node(source) + source.dist
@@ -202,7 +216,6 @@ def fmm_algorithm_circ(node_list, source_nodes):
     # ---- Step 2 --> Principal Loop - FMM ---- 
     while trial_nodes:
         # Point 1 -> Extract the lower distance node
-        #! is it used correctly? Using this command the node should be removed from the trial list, to be checked
         d_min, _, current_node = heapq.heappop(trial_nodes)
 
         # Security check: a node could be inserted many times in the list with different distances
@@ -222,7 +235,7 @@ def fmm_algorithm_circ(node_list, source_nodes):
             # Recompute the distance of the neighbour nodes only if not ALIVE
             if neighbor.state != 'ALIVE':
                 old_dist = neighbor.dist
-                new_dist = eikonal_sol_circ(neighbor)
+                new_dist = eikonal_sol_circ(neighbor, edge_curvature)
 
                 # Update the trial distance only if it is lower than the previously computed (always true if the node was FAR)
                 # see pag 4
@@ -234,7 +247,7 @@ def fmm_algorithm_circ(node_list, source_nodes):
 
 
 
-def eikonal_sol_circ(node):
+def eikonal_sol_circ(node, edge_curvature, F=1.0):
     """"
     Compute Locally the approximate solution of the Eikonal Equation
     For acute triangles only, for the moment
@@ -249,7 +262,6 @@ def eikonal_sol_circ(node):
         others = [n for n in tri.nodes if n.node_tag != node.node_tag]
         node_a, node_b = others[0], others[1]
 
-        #! I think it is from here the part we need to change it
         # CASE 1 - Both other nodes are ALIVE
         if node_a.state == 'ALIVE' and node_b.state == 'ALIVE':
 
@@ -262,7 +274,6 @@ def eikonal_sol_circ(node):
             d_B = node_b.dist
 
             # STEP 1 ---> obtain all the necessary info about the element AB
-
             AB = node_b.coords[:2] - node_a.coords[:2]
             L = np.linalg.norm(AB) # compute the distance AB
             # Local frame centered in A with x parallel to AB
@@ -271,64 +282,70 @@ def eikonal_sol_circ(node):
 
 
             # STEP 3 ---> C Coordinates on the local frame
-
             AC = node.coords[:2] - node_a.coords[:2]
             x_C = np.dot(AC,x_hat)
             y_C = np.dot(AC,y_hat)
 
 
             # STEP 4 ---> Virtual Source S coordinates
-            x_S = (d_A^2 - d_B^2 + L) / (2*L)
-            sq_y_s = d_A**2 - x_S**2
+            x_S = (d_A**2 - d_B**2 + L**2) / (2*L)
+            sq_y_S = d_A**2 - x_S**2
 
             # Check - if the value under the square root is under lower than zero: fall back to the 1D case
-            if sq_y_s < 0:
+            if sq_y_S < 0.0:
             # fallback 1D
                 t = min(d_A + node.distance_to_other_node(node_a),
                         d_B + node.distance_to_other_node(node_b))
                 dist = min(dist, t)
                 continue
 
-            # To decide the sign of ys, so which of the two virtual source is correct, use the sign of the curvature memorised in the 
-            if tri.curvature_is_set:
-                sign_ys = np.sign(tri.curvature)
+            key_AB = edge_key(node_a, node_b)
+            # The sign is in the reference frame of the edge (min_idx → max_idx).
+            # If node_a.idx > node_b.idx it means that the local frame 
+            # is inverted wrt the local frame --> invrt the read sign of the curvature.
+            flip = (node_a.idx > node_b.idx)
+
+            if key_AB in edge_curvature:
+                # It means that the sign of the curvature is already known
+                # --> Read the dictionary
+                sign_y_S_try = edge_curvature[key_AB]
+                # Correct the sign if the local frame is inverted wrt ad the usual framework
+                sign_y_S = -sign_y_S_try if flip else sign_y_S_try
             else:
-                sign_ys = -np.sign(y_C)  #! I am not sure, this part is not mine
+                #! Problem --> it is the first time we cross this edge
+                #! I do not know if this part is correct
+                # We impose that the source need to be on the other side of the edge
+                # wrt the third point C of the triangle
+                sign_y_S = -np.sign(y_C)
+                if sign_y_S == 0:
+                    sign_y_S = 1.0   # degenerate case: C exactly on AB
+            
+            # We can finally determine the position of the source S
+            y_S = sign_y_S * np.sqrt(sq_y_S)
 
-            y_s = sign_ys * np.sqrt(val)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-          
-
+            
+            # STEP 5 --> Determine the distane of C from the source S
+            t = np.sqrt( (x_C-x_S)**2 + (y_C-y_S)**2  )
 
             dist = min(dist, t)
 
-        # CASE 2 --> Degenerate cases
+
+            # STEP 6  --> update the curvature on the new edges AC and BC
+
+            # Update only if the distance t is compted
+            if t < float('inf'):
+                
+                # Reconstruct S position in the global 2D coordinates
+                S = node_a.coords[:2] + x_S*x_hat + y_S*y_hat
+
+                # update the edge AC
+                store_sign(node_a, node, S, edge_curvature)
+
+                # Update the edge BC
+                store_sign(node_b, node, S, edge_curvature)
+
+
+        # CASE 2 --> Degenerate cases - only one node alive
         # in these cases we need to compute the 1d distance
         elif node_a.state == 'ALIVE':
             dist_1d = node_a.dist + node.distance_to_other_node(node_a)   # T(A) + b*F
@@ -343,10 +360,62 @@ def eikonal_sol_circ(node):
 
 
 
+def edge_key(node_1, node_2):
+    """
+    Function needed to confront the same edge in the different iterations of the algorithm.
+
+    In fact the edge AB can be re-updated different times and can happen that dB becomes 
+    smaller than dA, in that case the local frame of reference would flip. 
+
+    In that case the curvature sign would not be consistent anymore with the reference
+    """
+    return (min(node_1.idx, node_2.idx), max(node_1.idx, node_2.idx))
 
 
 
+def store_sign(node_1, node_2, S, edge_curvature):
+    """
+    Function to update the curvature on an edge given the source position in the global coordinates
 
+    
+    """
+
+    # retrieve the key of the edge to now if it correct
+    key = edge_key(node_1, node_2)
+
+    # Do not overwrite if the value is already present
+    if key in edge_curvature:
+        return
+    
+    # Construct the local reference frame from the node with the lower idx to the one with the indx 
+    if node_1.idx < node_2.idx:
+        node_A, node_B = node_1, node_2
+    else:
+        node_A, node_B = node_2, node_1
+
+    
+    # Edge vector - A-->B
+    edge_vec = node_B.coords[:2] - node_A.coords[:2]
+    L_edge   = np.linalg.norm(edge_vec)
+
+    if L_edge < 1e-14:
+        return   # edge degenere
+
+    x_hat = edge_vec / L_edge
+    y_hat = np.array([-x_hat[1], x_hat[0]])
+
+
+    # ---> Project S on the local edge frame - only the sign of the y coordinate is relevant
+    S_local = S - node_A.coords[:2]  
+    y_S_canonical = np.dot(S_local, y_hat)
+
+    # Save the sign on the dictionary
+    sign = float(np.sign(y_S_canonical))
+    if sign == 0.0:
+        sign = 1.0  
+
+    # Save the alue
+    edge_curvature[key] = sign
 
 
 

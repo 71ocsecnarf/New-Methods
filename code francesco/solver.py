@@ -62,7 +62,6 @@ def Make_ElementList(filename, tag_to_node_obj_dic):
     if not gmsh.isInitialized():
         gmsh.initialize()
     
-    gmsh.open(filename)
     print("\n")
     print("=================================================")
     print("===============Making element list===============")
@@ -128,25 +127,31 @@ def Innit_Origin_Point(target_coords, node_list):
     distances = np.linalg.norm(all_coords - target_coords, axis=1)
     closest_node_idx = np.argmin(distances)
     closest_node = node_list[closest_node_idx]
+    closest_node.dist = distances[closest_node_idx]
+    closest_node.state = 'ALIVE'
 
-    #*Then, i look for the closest element in the neighbors of the closest node
-    best_dist = np.inf
-    target_elem = None
-    best_normal = None
-    for elem in closest_node.adjacent_triangles:
-        dist_to_elem, normal = Compute_Dist_Point_Triangle(target_coords, elem)
-        if dist_to_elem < best_dist:
-            best_dist = dist_to_elem
-            target_elem = elem
-            best_normal = normal
+    print(f"Source node {closest_node.node_tag} initialized at d={closest_node.dist:.4f}")
 
+    # Initialise also the close neighbours with an euclidean distance
+    for neighbor in closest_node.neighbors:
+        neighbor.dist = np.linalg.norm(neighbor.coords - target_coords)
+        neighbor.state = 'TRIAL'
+        print(f"Neighbor node {neighbor.node_tag} initialized at d={neighbor.dist:.4f}")
+        
+    return closest_node.coords, closest_node  
+
+
+
+def Reset_Node_State(node_list, source_nodes=None, source_coord=None):
+    for node in node_list:
+        node.dist  = float('inf')
+        node.state = 'FAR'
     
-    for node in target_elem.nodes:
-        node.dist = np.linalg.norm(node.coords - target_coords)
-        print(f"Node {node.node_tag} innitialized at d={node.dist:.4f}")
+    # Reimposta le distanze dei source nodes se forniti
+    if source_nodes is not None and source_coord is not None:
+        for node in source_nodes:
+            node.dist = np.linalg.norm(node.coords - source_coord)
 
-    projected_point = target_coords - best_dist*best_normal
-    return projected_point, target_elem
 
 
 def compute_err (node_list, source_coord):
@@ -227,14 +232,9 @@ def plot_convergence(h_values, err_inf, method_name):
     
     plt.loglog(h_arr, err_inf, 'o-', label = method_name)
 
-    # Print some reference slopes
-    plt.loglog(h_arr, h_arr,      '--', color='gray', label='O(h)')
-    plt.loglog(h_arr, h_arr**2,   '--', color='black', label='O(h²)')
-
     plt.xlabel('h (mesh size)')
     plt.ylabel('Error')
     plt.title('FMM Convergence')
     plt.legend()
     plt.grid(True, which='both')
     plt.gca().invert_xaxis()
-    plt.show()

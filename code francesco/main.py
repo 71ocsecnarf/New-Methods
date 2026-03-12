@@ -22,12 +22,11 @@ def main():
 
 
     solver.Check_Obtuse_triangles(element_list)
-    target_coords = np.array([0.0, 0.0, 0.0])
-    source_point, target_elem = solver.Innit_Origin_Point(target_coords, node_list)
+    target_coords = np.array([0.1, 0.5, 0.0])
+    source_point, source_node = solver.Innit_Origin_Point(target_coords, node_list)
+    source_nodes = [source_node]
 
-    source_nodes = target_elem.nodes
-
-    fmm_solver.fmm_algorithm(node_list, source_nodes)
+    fmm_solver.fmm_algorithm_circ(node_list, source_nodes)
     
     print("Computation Completed, Trace Generation ...")
     solver.Plot_Isolines(node_list, element_list)
