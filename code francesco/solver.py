@@ -151,6 +151,7 @@ def Reset_Node_State(node_list, source_nodes=None, source_coord=None):
     if source_nodes is not None and source_coord is not None:
         for node in source_nodes:
             node.dist = np.linalg.norm(node.coords - source_coord)
+            node.state = 'ALIVE'
 
 
 
@@ -172,7 +173,8 @@ def compute_err (node_list, source_coord):
         err_i = abs(ex_dist - node.dist)
 
         errors.append(err_i)
-        errors_rel.append(err_i/ex_dist)
+        if ex_dist > 1e-14:
+            errors_rel.append(err_i / ex_dist)
 
     # Max error - absolute value
     err = np.max(errors) 
@@ -237,4 +239,3 @@ def plot_convergence(h_values, err_inf, method_name):
     plt.title('FMM Convergence')
     plt.legend()
     plt.grid(True, which='both')
-    plt.gca().invert_xaxis()
