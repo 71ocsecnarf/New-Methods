@@ -82,8 +82,6 @@ def fmm_algorithm(node_list, source_nodes):
 
 
 
-
-
 def eikonal_sol(node, F=1.0):
     """"
     Compute Locally the approximate solution of the Eikonal Equation
