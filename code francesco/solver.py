@@ -104,22 +104,26 @@ def Compute_Dist_Point_Triangle(P, element):
     return dist_ortho, normal
 
 def Innit_Origin_Point(target_coords, node_list):
+    #! There was a problem when the source was not on a node of a mesh, 
+    #! I used AI to fix it
 
     all_coords = np.array([n.coords for n in node_list])
-    distances = np.linalg.norm(all_coords - target_coords, axis=1)
-    closest_node_idx = np.argmin(distances)
+    distances_to_target = np.linalg.norm(all_coords - target_coords, axis=1)
+    closest_node_idx = np.argmin(distances_to_target)
     closest_node = node_list[closest_node_idx]
-    closest_node.dist = 0.0
+ 
+    snap_err = np.linalg.norm(closest_node.coords - target_coords)
+    closest_node.dist  = snap_err
     closest_node.state = 'ALIVE'
-
-    print(f"Source node {closest_node.node_tag} initialized at d={closest_node.dist:.4f}")
-
+ 
     for neighbor in closest_node.neighbors:
-        neighbor.dist = np.linalg.norm(neighbor.coords - closest_node.coords)
+        neighbor.dist  = np.linalg.norm(neighbor.coords - target_coords)
         neighbor.state = 'TRIAL'
-        print(f"Neighbor node {neighbor.node_tag} initialized at d={neighbor.dist:.4f}")
-        
-    return closest_node.coords, [closest_node]  
+ 
+    print(f"Source node {closest_node.node_tag} @ {closest_node.coords[:2]}")
+    print(f"  Snapping error = {snap_err:.6e}")
+ 
+    return target_coords, [closest_node]
 
 
 def Reset_Node_State(node_list):

@@ -28,25 +28,6 @@ def fmm_algorithm(node_list, source_nodes):
         if node.state == 'TRIAL':
             heap_push(node, node.dist)
     
-    # Set the sources neighbor nodes as trial - Creation of the narrow band
-    for source in source_nodes:
-        for neighbor in source.neighbors:
-            if neighbor.state == 'ALIVE':  # salta source e già processati
-                continue
-            # Computation of preliminary distance 
-            #! is it ok if we compute it as the euclidean one for starting?
-            #! To be asked to the professor
-            if neighbor.state != 'ALIVE':
-                new_dist = eikonal_sol(neighbor)
-                #! is it used correctly?
-                if new_dist == float('inf'):
-                 #! is this if necessary? to be asked the professor
-                    new_dist = neighbor.distance_to_other_node(source) + source.dist
-
-                if new_dist < neighbor.dist:
-                    neighbor.dist = new_dist
-                    neighbor.state = 'TRIAL'
-                    heap_push(neighbor, new_dist)
     
     # ---- Step 2 --> Principal Loop - FMM ---- 
     while trial_nodes:
@@ -191,25 +172,6 @@ def fmm_algorithm_circ(node_list, source_nodes):
         if node.state == 'TRIAL':
             heap_push(node, node.dist)
 
-
-    # Set the sources neighbor nodes as trial - Creation of the narrow band
-    for source in source_nodes:
-        for neighbor in source.neighbors:
-            # Computation of preliminary distance 
-            if neighbor.state == 'ALIVE':  # salta source e già processati
-                continue
-            #! is it ok if we compute it as the euclidean one for starting?
-            #! To be asked to the professor
-            if neighbor.state != 'ALIVE':
-                new_dist = eikonal_sol_circ(neighbor, edge_curvature)
-                if new_dist == float('inf'):
-                 #! is this if necessary? to be asked the professor
-                    new_dist = neighbor.distance_to_other_node(source) + source.dist
-
-                if new_dist < neighbor.dist:
-                    neighbor.dist = new_dist
-                    neighbor.state = 'TRIAL'
-                    heap_push(neighbor, new_dist)
     
     # ---- Step 2 --> Principal Loop - FMM ---- 
     while trial_nodes:

@@ -55,8 +55,7 @@ def main():
         element_list = solver.Make_ElementList(output_path, tag_to_node_obj_dic)
 
         # 4 ---> Source initialization
-        source_point, source_nodes = solver.Innit_Origin_Point(source_coord, node_list)
-        snapped_coord = source_nodes[0].coords
+        true_source, source_nodes = solver.Innit_Origin_Point(source_coord, node_list)
 
         # 5a ---> Standard FMM Algorithm
         print()
@@ -66,7 +65,7 @@ def main():
         t_end = time.time()
         print(f"Elapsed time: {t_end - t_start:.4f} s")
 
-        err_fmm, err_rel_fmm, e_l2_fmm = solver.compute_err(node_list, snapped_coord)
+        err_fmm, err_rel_fmm, e_l2_fmm = solver.compute_err(node_list, true_source)
         print(f"Max error = {err_fmm:.6e}  | Max Relative Error = {err_rel_fmm}   | L2 error = {e_l2_fmm:.6e}")
 
         errors_fmm.append(err_fmm)
@@ -75,8 +74,7 @@ def main():
 
         # 5b ---> Reset the nodes state and use the higher order fmm
         solver.Reset_Node_State(node_list)
-        source_point, source_nodes = solver.Innit_Origin_Point(source_coord, node_list)
-        snapped_coord = source_nodes[0].coords
+        true_source, source_nodes = solver.Innit_Origin_Point(source_coord, node_list)
 
         print()
         print('------------ Circular FMM ------------')
@@ -85,7 +83,7 @@ def main():
         t_end = time.time()
         print(f"Elapsed time: {t_end - t_start:.4f} s")
 
-        err_circ, err_rel_circ, e_l2_circ = solver.compute_err(node_list, snapped_coord)
+        err_circ, err_rel_circ, e_l2_circ = solver.compute_err(node_list, true_source)
         print(f"Max error = {err_circ:.6e}  | Max Relative Error = {err_rel_circ}   | L2 error = {e_l2_circ:.6e}")
 
         errors_circ.append(err_circ)
@@ -96,6 +94,9 @@ def main():
         h_values.append(L/(N-1))
         gmsh.finalize()
 
+    h_arr       = np.array(h_values[::-1])
+    l2_fmm_arr  = np.array(errors_l2_fmm[::-1])
+    l2_circ_arr = np.array(errors_l2_circ[::-1])
 
     # ----> D - POST PROCESS - <----
     
@@ -109,16 +110,18 @@ def main():
         order = np.log(errors_circ[i] / errors_circ[i-1]) / np.log(h_values[i] / h_values[i-1])
         print(f"  h={h_values[i]:.4f}  |  e={errors_circ[i]:.2e}  |  order ≈ {order:.2f}")
 
-    solver.plot_convergence(h_values, errors_fmm,  'FMM')
-    solver.plot_convergence(h_values, errors_circ, 'HFMM')
-
-    h_arr = np.array(h_values)
-    plt.figure(100)
-    plt.loglog(h_arr, h_arr,    '--', color='gray',  label='O(h)')
-    plt.loglog(h_arr, h_arr**2, '--', color='black', label='O(h²)')
+    plt.figure(100, figsize=(8, 6))
+    plt.loglog(h_arr, l2_fmm_arr,  'o-', label='FMM (L2)')
+    plt.loglog(h_arr, l2_circ_arr, 'o-', label='HFMM (L2)')
+    plt.loglog(h_arr, h_arr,       '--', color='gray',  label='O(h)')
+    plt.loglog(h_arr, h_arr**2,    '--', color='black', label='O(h\u00b2)')
+    plt.xlabel('h (mesh size)')
+    plt.ylabel('L2 Error')
+    plt.title('FMM Convergence')
     plt.legend()
-    plt.show() 
-
+    plt.grid(True, which='both')
+    plt.gca().invert_xaxis()
+    plt.show()
 
 if __name__ == "__main__":
     main()
