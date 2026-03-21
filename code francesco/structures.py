@@ -1,7 +1,6 @@
 import numpy as np
 import heapq
 
-#todo===========================================
 class MESH:
     def __init__(self):
         pass
@@ -10,9 +9,7 @@ class ELEMENT:
     def __init__(self, nodes):
         #*               A         B         C
         self.nodes  = [nodes[0], nodes[1], nodes[2]] 
-
         self.IsObtuse = False
-#todo===========================================
 
 class NODE:
     def  __init__(self, coords, node_tag, idx):
