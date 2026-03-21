@@ -192,3 +192,50 @@ def plot_convergence(h_values, err_inf, method_name):
     plt.title('FMM Convergence')
     plt.legend()
     plt.grid(True, which='both')
+
+def Plot_Isolines_3D(node_list, element_list):
+
+    import matplotlib.pyplot as plt
+    import matplotlib.tri as mtri
+    from mpl_toolkits.mplot3d import Axes3D
+    from matplotlib.colors import Normalize
+    from matplotlib.cm import ScalarMappable
+    import matplotlib.cm as cm
+
+    x   = np.array([n.coords[0] for n in node_list])
+    y   = np.array([n.coords[1] for n in node_list])
+    z   = np.array([n.coords[2] for n in node_list])
+    val = np.array([n.dist      for n in node_list])
+
+    triangles = np.array([[n.idx for n in e.nodes] for e in element_list])
+
+    # Valeur moyenne de 'dist' sur chaque triangle (pour la couleur par face)
+    face_val = val[triangles].mean(axis=1)
+
+    norm    = Normalize(vmin=val.min(), vmax=val.max())
+    cmap    = cm.viridis
+    colors  = cmap(norm(face_val))   # (N_tri, 4) RGBA
+
+    fig = plt.figure(figsize=(10, 7))
+    ax  = fig.add_subplot(111, projection='3d')
+
+    # plot_trisurf avec les vraies coordonnées 3D
+    surf = ax.plot_trisurf(x, y, z, triangles=triangles,
+                           shade=False, antialiased=False)
+    ax.scatter(-0.5, 0., 1.0, color='red', s=100, zorder=5, label='Point source')
+
+    # Applique les couleurs par face
+    surf.set_facecolors(colors)
+
+    # Colorbar manuelle
+    sm = ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+    fig.colorbar(sm, ax=ax, shrink=0.5, label="Distance géodésique")
+
+    ax.set_title("FMM - Champ de distance sur le cylindre")
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
+    ax.set_zlabel("Z")
+
+    plt.tight_layout()
+    plt.show()

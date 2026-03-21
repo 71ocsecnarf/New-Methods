@@ -234,15 +234,20 @@ def eikonal_sol_circ(node, edge_curvature, F=1.0):
             d_B = node_b.dist
 
             # STEP 1 ---> obtain all the necessary info about the element AB
-            AB = node_b.coords[:2] - node_a.coords[:2]
+            AB = node_b.coords - node_a.coords
+            AC = node.coords - node_a.coords
+            normal = np.cross(AC, AB)
+            normal = normal / np.linalg.norm(normal)#*unit normal vector
+
             L = np.linalg.norm(AB) # compute the distance AB
             # Local frame centered in A with x parallel to AB
             x_hat = AB / L
-            y_hat = np.array([-x_hat[1], x_hat[0]])
+            y_hat = -np.cross(normal, x_hat)
+            y_hat = y_hat / np.linalg.norm(y_hat)
 
 
             # STEP 3 ---> C Coordinates on the local frame
-            AC = node.coords[:2] - node_a.coords[:2]
+            
             x_C = np.dot(AC,x_hat)
             y_C = np.dot(AC,y_hat)
 
@@ -296,13 +301,13 @@ def eikonal_sol_circ(node, edge_curvature, F=1.0):
             if t < float('inf'):
                 
                 # Reconstruct S position in the global 2D coordinates
-                S = node_a.coords[:2] + x_S*x_hat + y_S*y_hat
+                S = node_a.coords + x_S*x_hat + y_S*y_hat
 
                 # update the edge AC
-                store_sign(node_a, node, S, edge_curvature)
+                store_sign(node_a, node, S, edge_curvature, y_hat)
 
                 # Update the edge BC
-                store_sign(node_b, node, S, edge_curvature)
+                store_sign(node_b, node, S, edge_curvature, y_hat)
 
 
         # CASE 2 --> Degenerate cases - only one node alive
@@ -332,52 +337,31 @@ def edge_key(node_1, node_2):
     return (min(node_1.idx, node_2.idx), max(node_1.idx, node_2.idx))
 
 
-
-def store_sign(node_1, node_2, S, edge_curvature):
-    """
-    Function to update the curvature on an edge given the source position in the global coordinates
-
-    
-    """
-
-    # retrieve the key of the edge to now if it correct
+def store_sign(node_1, node_2, S, edge_curvature, y_hat):
     key = edge_key(node_1, node_2)
-
-    # Do not overwrite if the value is already present
     if key in edge_curvature:
         return
-    
-    # Construct the local reference frame from the node with the lower idx to the one with the indx 
+
     if node_1.idx < node_2.idx:
         node_A, node_B = node_1, node_2
     else:
         node_A, node_B = node_2, node_1
 
-    
-    # Edge vector - A-->B
-    edge_vec = node_B.coords[:2] - node_A.coords[:2]
-    L_edge   = np.linalg.norm(edge_vec)
-
+    edge_vec = node_B.coords - node_A.coords
+    L_edge = np.linalg.norm(edge_vec)
     if L_edge < 1e-14:
-        return   # edge degenere
+        return
 
-    x_hat = edge_vec / L_edge
-    y_hat = np.array([-x_hat[1], x_hat[0]])
-
-
-    # ---> Project S on the local edge frame - only the sign of the y coordinate is relevant
-    S_local = S - node_A.coords[:2]  
+    S_local = S - node_A.coords
     y_S_canonical = np.dot(S_local, y_hat)
 
-    # Save the sign on the dictionary
+
+    flip = (node_1.idx > node_2.idx)
+    if flip:
+        y_S_canonical = -y_S_canonical
+
     sign = float(np.sign(y_S_canonical))
     if sign == 0.0:
-        sign = 1.0  
+        sign = 1.0
 
-    # Save the alue
     edge_curvature[key] = sign
-
-
-
-
-

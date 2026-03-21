@@ -68,3 +68,45 @@ def generate_mesh(N, L, mesh_type, output_dir):
     gmsh.finalize()
 
     return output_path
+
+# Dans mesh_generation.py
+
+def generate_cylinder_mesh(N, R, H, output_dir):
+    """
+    Generate a structured triangular mesh of a half-cylinder lateral surface.
+    N controls the number of points along both the arc and the height.
+    """
+    gmsh.initialize()
+    gmsh.model.add("cylinder_surface")
+
+    p_center = gmsh.model.occ.addPoint(0, 0, 0)
+    p_left   = gmsh.model.occ.addPoint(-R, 0, 0)
+    p_right  = gmsh.model.occ.addPoint( R, 0, 0)
+
+    arc_bot  = gmsh.model.occ.addCircleArc(p_right, p_center, p_left)
+    extruded = gmsh.model.occ.extrude([(1, arc_bot)], 0, 0, H)
+    gmsh.model.occ.synchronize()
+
+    surf_tag       = [e[1] for e in extruded if e[0] == 2][0]
+    lines          = [e[1] for e in extruded if e[0] == 1]
+    arc_top_tag    = lines[1]
+    line_right_tag = lines[0]
+    line_left_tag  = lines[2]
+
+    gmsh.model.mesh.setTransfiniteCurve(arc_bot,        N)
+    gmsh.model.mesh.setTransfiniteCurve(arc_top_tag,    N)
+    gmsh.model.mesh.setTransfiniteCurve(line_left_tag,  N)
+    gmsh.model.mesh.setTransfiniteCurve(line_right_tag, N)
+    gmsh.model.mesh.setTransfiniteSurface(surf_tag)
+    # Pas de setRecombine -> triangles
+
+    gmsh.model.addPhysicalGroup(2, [surf_tag], tag=1)
+    gmsh.model.setPhysicalName(2, 1, "lateral_face")
+
+    gmsh.model.mesh.generate(2)
+
+    output_path = os.path.join(output_dir, "cylinder_surface.msh")
+    gmsh.write(output_path)
+    gmsh.finalize()
+
+    return output_path
