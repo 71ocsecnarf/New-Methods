@@ -12,9 +12,10 @@ class ELEMENT:
 
 class EDGE:
     def __init__(self, node_a, node_b):
-        self.nodes = (node_a, node_b)
+        self.nodes = [node_a, node_b]
         self.kappa = 0.0
         self.adjacent_triangles = []
+        self.Is_innit_in_target_elem = False
 #todo===========================================
 
 class NODE:
@@ -35,6 +36,7 @@ class NODE:
         #*Attributs for FMM (init here)
         self.dist = float('inf')
         self.state = 'FAR'      #*'FAR', 'TRIAL', ou 'ALIVE'
+        self.grad = np.zeros(2)
 
     def distance_to_other_node(self, other_node):
         return np.linalg.norm(self.coords - other_node.coords)
