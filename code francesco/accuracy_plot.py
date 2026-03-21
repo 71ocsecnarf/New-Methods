@@ -240,6 +240,7 @@ def plot_convergence_cylinder(h_values, errors_l2_fmm, errors_l2_circ):
     plt.grid(True, which='both')
     plt.gca().invert_xaxis()
     plt.tight_layout()
+    plt.savefig("ConvStudyCylinder.pdf")
     plt.show()
 
 if __name__ == "__main__":
