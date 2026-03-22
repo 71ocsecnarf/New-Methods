@@ -102,7 +102,9 @@ def main(mesh_type=MESH_TYPE, N_values=N_VALUES):
         t_end = time.time()
         print(f"Elapsed time: {t_end - t_start:.4f} s")
 
-        err_fmm, e_l2_fmm = cfg['compute_err'](node_list, true_source)[:2]
+        # err_fmm, e_l2_fmm = cfg['compute_err'](node_list, true_source)[:2]
+        result_fmm  = cfg['compute_err'](node_list, true_source)
+        err_fmm,  e_l2_fmm  = result_fmm[0],  result_fmm[-1]
         print(f"Max error = {err_fmm:.6e}  |  L2 error = {e_l2_fmm:.6e}")
         errors_fmm.append(err_fmm)
         errors_l2_fmm.append(e_l2_fmm)
@@ -118,7 +120,9 @@ def main(mesh_type=MESH_TYPE, N_values=N_VALUES):
         t_end = time.time()
         print(f"Elapsed time: {t_end - t_start:.4f} s")
 
-        err_circ, e_l2_circ = cfg['compute_err'](node_list, true_source)[:2]
+        # err_circ, e_l2_circ = cfg['compute_err'](node_list, true_source)[:2]
+        result_circ = cfg['compute_err'](node_list, true_source)
+        err_circ, e_l2_circ = result_circ[0], result_circ[-1]
         print(f"Max error = {err_circ:.6e}  |  L2 error = {e_l2_circ:.6e}")
         errors_circ.append(err_circ)
         errors_l2_circ.append(e_l2_circ)

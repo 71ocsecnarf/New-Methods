@@ -13,7 +13,7 @@ import mesh_generation
 # ---- Parameter to modify to change geometry -----
 # -------------------------------------------------
 
-MESH_TYPE = 'square_surface'   # 'square_surface' or 'cylinder'
+MESH_TYPE = 'cylinder'   # 'square_surface' or 'cylinder'
 FMM_TYPE = 'circ'              # 'standard for FMM of 'circ' for higher order FMM
 
 # -------------------------------------------------
@@ -37,7 +37,7 @@ def main(mesh_type=MESH_TYPE, fmm_type=FMM_TYPE):
         R = 0.5
         H = 1.0
         output_path    = os.path.join(current_dir, "cylinder_surface.msh")
-        source_coords  = np.array([R, 0.0, 0.0])
+        source_coords  = np.array([R, 0.0, 0.5])
         mesh_generation.generate_cylinder_mesh(N, R, H, current_dir)
 
     else:
@@ -71,7 +71,7 @@ def main(mesh_type=MESH_TYPE, fmm_type=FMM_TYPE):
     if mesh_type == 'square_surface':
         solver.Plot_Isolines(node_list, element_list)
     elif mesh_type == 'cylinder':
-        solver.Plot_Isolines_3D(node_list, element_list)
+        solver.Plot_Isolines_3D(node_list, element_list, source_coords=source_coords)
 
     gmsh.finalize()
 

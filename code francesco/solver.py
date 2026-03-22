@@ -151,6 +151,9 @@ def compute_err(node_list, source_coord):
     return err, err_rel, e_l2
 
 
+
+
+
 def Plot_Isolines(node_list, element_list):
 
     x = np.array([n.coords[0] for n in node_list])
@@ -179,6 +182,9 @@ def Plot_Isolines(node_list, element_list):
     plt.ylabel("Y")
     plt.show()
 
+
+
+
 def plot_convergence(h_values, err_inf, method_name):
 
     h_arr = np.array(h_values)
@@ -193,10 +199,12 @@ def plot_convergence(h_values, err_inf, method_name):
     plt.legend()
     plt.grid(True, which='both')
 
-def Plot_Isolines_3D(node_list, element_list):
 
-    import matplotlib.pyplot as plt
-    import matplotlib.tri as mtri
+
+
+
+def Plot_Isolines_3D(node_list, element_list, source_coords=None):
+
     from mpl_toolkits.mplot3d import Axes3D
     from matplotlib.colors import Normalize
     from matplotlib.cm import ScalarMappable
@@ -208,31 +216,80 @@ def Plot_Isolines_3D(node_list, element_list):
     val = np.array([n.dist      for n in node_list])
 
     triangles = np.array([[n.idx for n in e.nodes] for e in element_list])
+    face_val  = val[triangles].mean(axis=1)
 
-    # Valeur moyenne de 'dist' sur chaque triangle (pour la couleur par face)
-    face_val = val[triangles].mean(axis=1)
+    norm_c = Normalize(vmin=val.min(), vmax=val.max())
+    cmap   = cm.viridis
+    colors = cmap(norm_c(face_val))
 
-    norm    = Normalize(vmin=val.min(), vmax=val.max())
-    cmap    = cm.viridis
-    colors  = cmap(norm(face_val))   # (N_tri, 4) RGBA
-
-    fig = plt.figure(figsize=(10, 7))
+    fig = plt.figure(figsize=(12, 8))
     ax  = fig.add_subplot(111, projection='3d')
 
-    # plot_trisurf avec les vraies coordonnées 3D
+    # Superficie semitrasparente
     surf = ax.plot_trisurf(x, y, z, triangles=triangles,
-                           shade=False, antialiased=False)
-    ax.scatter(-0.5, 0., 1.0, color='red', s=100, zorder=5, label='Point source')
-
-    # Applique les couleurs par face
+                           shade=False, antialiased=False, alpha=0.85)
     surf.set_facecolors(colors)
 
-    # Colorbar manuelle
-    sm = ScalarMappable(cmap=cmap, norm=norm)
-    sm.set_array([])
-    fig.colorbar(sm, ax=ax, shrink=0.5, label="Distance géodésique")
+    # ---- Punto sorgente ----
+    if source_coords is not None:
+        ax.scatter(source_coords[0], source_coords[1], source_coords[2],
+                   color='red', s=100, zorder=5, label='Point source')
+        ax.legend()
 
-    ax.set_title("FMM - Champ de distance sur le cylindre")
+    # ---- Isolinee con marching edges ----
+    # Offset radiale minimo per evitare z-fighting con la superficie
+    R_mean = np.sqrt(x**2 + y**2).mean()
+    R_iso  = R_mean * 1.008
+
+    n_levels = 15
+    eps      = (val.max() - val.min()) * 0.001
+    levels   = np.linspace(val.min() + eps, val.max() - eps, n_levels)
+
+    for level in levels:
+        label_pts = []
+
+        for tri in triangles:
+            i0, i1, i2 = tri
+            pts = []
+            for ea, eb in [(i0, i1), (i1, i2), (i2, i0)]:
+                va, vb = val[ea], val[eb]
+                if (va - level) * (vb - level) < 0:
+                    t = (level - va) / (vb - va)
+                    # Interpolazione in coordinate 3D cartesiane
+                    # (evita il problema del salto di theta ai bordi)
+                    px = x[ea] + t * (x[eb] - x[ea])
+                    py = y[ea] + t * (y[eb] - y[ea])
+                    pz = z[ea] + t * (z[eb] - z[ea])
+                    # Riproietta sul cilindro con R_iso
+                    r_pt = np.sqrt(px**2 + py**2)
+                    if r_pt > 1e-10:
+                        px = px / r_pt * R_iso
+                        py = py / r_pt * R_iso
+                    pts.append((px, py, pz))
+
+            if len(pts) == 2:
+                ax.plot([pts[0][0], pts[1][0]],
+                        [pts[0][1], pts[1][1]],
+                        [pts[0][2], pts[1][2]],
+                        color='white', linewidth=1.2, alpha=1.0, zorder=10)
+                label_pts.append(pts)
+
+        # Etichetta al punto medio di un segmento centrale
+        if label_pts:
+            p0, p1 = label_pts[len(label_pts) // 2]
+            mx = (p0[0] + p1[0]) / 2
+            my = (p0[1] + p1[1]) / 2
+            mz = (p0[2] + p1[2]) / 2
+            ax.text(mx, my, mz, f'{level:.2f}',
+                    color='yellow', fontsize=6.5, fontweight='bold',
+                    zorder=20, ha='center')
+
+    # ---- Colorbar ----
+    sm = ScalarMappable(cmap=cmap, norm=norm_c)
+    sm.set_array([])
+    fig.colorbar(sm, ax=ax, shrink=0.5, label="Geodesic distance")
+
+    ax.set_title("FMM - Distance field on cylinder")
     ax.set_xlabel("X")
     ax.set_ylabel("Y")
     ax.set_zlabel("Z")
