@@ -225,19 +225,19 @@ def Plot_Isolines_3D(node_list, element_list, source_coords=None):
     fig = plt.figure(figsize=(12, 8))
     ax  = fig.add_subplot(111, projection='3d')
 
-    # Superficie semitrasparente
+    # Semitransparent surface
     surf = ax.plot_trisurf(x, y, z, triangles=triangles,
                            shade=False, antialiased=False, alpha=0.85)
     surf.set_facecolors(colors)
 
-    # ---- Punto sorgente ----
+    # ---- Source Point ----
     if source_coords is not None:
         ax.scatter(source_coords[0], source_coords[1], source_coords[2],
                    color='red', s=100, zorder=5, label='Point source')
         ax.legend()
 
-    # ---- Isolinee con marching edges ----
-    # Offset radiale minimo per evitare z-fighting con la superficie
+    # ---- Isolines ----
+    # Minumum Radial offset to avoid z-fighting with the sourface 
     R_mean = np.sqrt(x**2 + y**2).mean()
     R_iso  = R_mean * 1.008
 
@@ -255,12 +255,11 @@ def Plot_Isolines_3D(node_list, element_list, source_coords=None):
                 va, vb = val[ea], val[eb]
                 if (va - level) * (vb - level) < 0:
                     t = (level - va) / (vb - va)
-                    # Interpolazione in coordinate 3D cartesiane
-                    # (evita il problema del salto di theta ai bordi)
+                    # Interpolation in 3D cartesian coordinates
                     px = x[ea] + t * (x[eb] - x[ea])
                     py = y[ea] + t * (y[eb] - y[ea])
                     pz = z[ea] + t * (z[eb] - z[ea])
-                    # Riproietta sul cilindro con R_iso
+                    # Re-project on the cylinder with R_iso
                     r_pt = np.sqrt(px**2 + py**2)
                     if r_pt > 1e-10:
                         px = px / r_pt * R_iso
@@ -274,7 +273,7 @@ def Plot_Isolines_3D(node_list, element_list, source_coords=None):
                         color='white', linewidth=1.2, alpha=1.0, zorder=10)
                 label_pts.append(pts)
 
-        # Etichetta al punto medio di un segmento centrale
+        # Label at the mid point of each segment
         if label_pts:
             p0, p1 = label_pts[len(label_pts) // 2]
             mx = (p0[0] + p1[0]) / 2
