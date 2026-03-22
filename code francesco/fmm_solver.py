@@ -235,18 +235,17 @@ def eikonal_sol_circ(node, edge_curvature, F=1.0):
             # STEP 1 ---> obtain all the necessary info about the element AB
             AB = node_b.coords - node_a.coords
             AC = node.coords - node_a.coords
-            normal = np.cross(AC, AB)
+            normal = np.cross(AB, AC)
             normal = normal / np.linalg.norm(normal)#*unit normal vector
 
             L = np.linalg.norm(AB) # compute the distance AB
             # Local frame centered in A with x parallel to AB
             x_hat = AB / L
-            y_hat = -np.cross(normal, x_hat)
+            y_hat = np.cross(normal, x_hat)
             y_hat = y_hat / np.linalg.norm(y_hat)
 
 
             # STEP 3 ---> C Coordinates on the local frame
-            
             x_C = np.dot(AC,x_hat)
             y_C = np.dot(AC,y_hat)
 
@@ -264,20 +263,23 @@ def eikonal_sol_circ(node, edge_curvature, F=1.0):
                 continue
 
             key_AB = edge_key(node_a, node_b)
-            # The sign is in the reference frame of the edge (min_idx → max_idx).
-            # If node_a.idx > node_b.idx it means that the local frame 
-            # is inverted wrt the local frame --> invrt the read sign of the curvature.
-            flip = (node_a.idx > node_b.idx)
+            # We store in each edge of triangle the position of the virtual source S
 
             if key_AB in edge_curvature:
-                # It means that the sign of the curvature is already known
+                # It means that the virtual source position is already known
                 # --> Read the dictionary
-                sign_y_S_try = edge_curvature[key_AB]
-                # Correct the sign if the local frame is inverted wrt ad the usual framework
-                sign_y_S = -sign_y_S_try if flip else sign_y_S_try
+
+                # Re-project the position of the source in the local frame
+                S_dict = edge_curvature[key_AB]
+                S_local = S_dict - node_a.coords
+                y_S_test = np.dot(S_local, y_hat)
+                sign_y_S = np.sign(y_S_test) 
+
+                if sign_y_S == 0:
+                    sign_y_S = 1.0   # degenerate case: C exactly on AB  
             else:
-                # We impose that the source need to be on the other side of the edge
-                # wrt the third point C of the triangle
+                # If it is the first time we cross this edge, we impose that the position 
+                # of the source S is on the opposite side of the vertex C
                 sign_y_S = -np.sign(y_C)
                 if sign_y_S == 0:
                     sign_y_S = 1.0   # degenerate case: C exactly on AB
@@ -288,23 +290,20 @@ def eikonal_sol_circ(node, edge_curvature, F=1.0):
             
             # STEP 5 --> Determine the distane of C from the source S
             t = np.sqrt( (x_C-x_S)**2 + (y_C-y_S)**2  )
-
             dist = min(dist, t)
 
 
             # STEP 6  --> update the curvature on the new edges AC and BC
 
-            # Update only if the distance t is compted
-            if t < float('inf'):
                 
-                # Reconstruct S position in the global 2D coordinates
-                S = node_a.coords + x_S*x_hat + y_S*y_hat
+            # Reconstruct S position in the global 2D coordinates
+            S = node_a.coords + x_S*x_hat + y_S*y_hat
 
-                # update the edge AC
-                store_sign(node_a, node, S, edge_curvature, y_hat)
+            # update the edge AC
+            store_virtual_source(node_a, node, S, edge_curvature)
 
-                # Update the edge BC
-                store_sign(node_b, node, S, edge_curvature, y_hat)
+            # Update the edge BC
+            store_virtual_source(node_b, node, S, edge_curvature)
 
 
         # CASE 2 --> Degenerate cases - only one node alive
@@ -333,6 +332,24 @@ def edge_key(node_1, node_2):
     return (min(node_1.idx, node_2.idx), max(node_1.idx, node_2.idx))
 
 
+def store_virtual_source(node_1, node_2, S, edge_curvature):
+    """
+    It saves the 3D position of the virtual source S for the edge (node_1, node_2).
+    It does not overwrite it if already present
+    """
+
+    #! Understand if when we will need to reinitialize the virtual source, we will need to change this code
+
+    key = edge_key(node_1, node_2)
+
+    if key in edge_curvature:
+        return
+    
+    #Update the position of the virtual source S for the edge
+    edge_curvature[key] = S.copy()
+
+
+"""
 def store_sign(node_1, node_2, S, edge_curvature, y_hat):
     key = edge_key(node_1, node_2)
     if key in edge_curvature:
@@ -361,3 +378,4 @@ def store_sign(node_1, node_2, S, edge_curvature, y_hat):
         sign = 1.0
 
     edge_curvature[key] = sign
+"""
