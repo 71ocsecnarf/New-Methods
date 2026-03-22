@@ -32,7 +32,6 @@ def fmm_algorithm(node_list, source_nodes):
     # ---- Step 2 --> Principal Loop - FMM ---- 
     while trial_nodes:
         # Point 1 -> Extract the lower distance node
-        #! is it used correctly? Using this command the node should be removed from the trial list, to be checked
         d_min, _, current_node = heapq.heappop(trial_nodes)
 
         # Security check: a node could be inserted many times in the list with different distances
@@ -277,8 +276,6 @@ def eikonal_sol_circ(node, edge_curvature, F=1.0):
                 # Correct the sign if the local frame is inverted wrt ad the usual framework
                 sign_y_S = -sign_y_S_try if flip else sign_y_S_try
             else:
-                #! Problem --> it is the first time we cross this edge
-                #! I do not know if this part is correct
                 # We impose that the source need to be on the other side of the edge
                 # wrt the third point C of the triangle
                 sign_y_S = -np.sign(y_C)
@@ -320,7 +317,6 @@ def eikonal_sol_circ(node, edge_curvature, F=1.0):
             dist_1d = node_b.dist + node.distance_to_other_node(node_b)  # T(B) + c*F
             dist = min(dist, dist_1d)
        
-       #! Can we delete these two elif (and consequently the if at the start) and put them alltogether without checking if the two nodes are alive?
     return dist
 
 
