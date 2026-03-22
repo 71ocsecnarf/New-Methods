@@ -147,7 +147,7 @@ def fmm_algorithm_circ(node_list, source_nodes):
         From the source nodes, fmm_algoritm runs the FMM
     """
 
-     # Internal function to avoid multiple push and get a very long list of values
+    # Internal function to avoid multiple push and get a very long list of values
     def heap_push(node, dist):
         if dist < best_dist_in_heap.get(node.idx, float('inf')):
             best_dist_in_heap[node.idx] = dist
