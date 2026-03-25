@@ -159,8 +159,16 @@ def fmm_algorithm_circ(node_list, source_nodes):
     # ---- Step 1 --> Initialization ----
     trial_nodes = []
     best_dist_in_heap = {}
-    edge_curvature = {}  # Global dictionary containing all edges and the curvature of the front on it
-                         # (indx_A indx_B)  ---> k (curvature)
+    edge_curvature = {}      # Global dictionary: edge (idx_A, idx_B) --> virtual source position S (3D coords)
+                             # Tracks the position of the virtual source on each edge of the mesh.
+
+    node_virtual_source = {} # Global dictionary: node.idx --> corner NODE object
+                             # When the wavefront reaches a node via a 1D fallback (i.e. the geodesic
+                             # exits the triangle through a vertex), that vertex becomes a new virtual
+                             # source. This dictionary stores, for each such node, the corner NODE
+                             # from which it was reached, so that future propagations can use it
+                             # as the new local origin instead of trying to back-trace to the
+                             # original source S.
 
     # Mark source nodes as ALIVE before anything else
     for node in source_nodes:
@@ -194,7 +202,7 @@ def fmm_algorithm_circ(node_list, source_nodes):
             # Recompute the distance of the neighbour nodes only if not ALIVE
             if neighbor.state != 'ALIVE':
                 old_dist = neighbor.dist
-                new_dist = eikonal_sol_circ(neighbor, edge_curvature)
+                new_dist = eikonal_sol_circ(neighbor, edge_curvature, node_virtual_source)
 
                 # Update the trial distance only if it is lower than the previously computed (always true if the node was FAR)
                 # see pag 4
@@ -206,64 +214,96 @@ def fmm_algorithm_circ(node_list, source_nodes):
 
 
 
-def eikonal_sol_circ(node, edge_curvature, F=1.0):
-    """"
-    Compute Locally the approximate solution of the Eikonal Equation
-    For acute triangles only, for the moment
-    """
+def eikonal_sol_circ(node, edge_curvature, node_virtual_source):
+    dist = float('inf')  # Distance Initialization
 
-    # First - Distance initialization
-    dist = float('inf')
-
-    # For compute the distance D from all adjacents triangles in 
-    for tri in node.adjacent_triangles:
-        
+    for tri in node.adjacent_triangles: # Compute all the distance from all adjactens triangles
         others = [n for n in tri.nodes if n.node_tag != node.node_tag]
         node_a, node_b = others[0], others[1]
 
-        # CASE 1 - Both other nodes are ALIVE
+        # ------------------------------------------
+        # CASE 1: Both nodes are ALIVE
+        # ------------------------------------------
         if node_a.state == 'ALIVE' and node_b.state == 'ALIVE':
-
-            # We need to have T(A) < T(B)
-            if node_a.dist > node_b.dist:
-                # If it not the case swap the nodes
+            if node_a.dist > node_b.dist: # d(A) < d(B) as a convention
                 node_a, node_b = node_b, node_a
 
-            d_A = node_a.dist
-            d_B = node_b.dist
+            d_A_raw = node_a.dist
+            d_B_raw = node_b.dist
 
-            # STEP 1 ---> obtain all the necessary info about the element AB
+            # Get the registered virtual sources (if present) for the vertices A and B
+            corner_a = node_virtual_source.get(node_a.idx)
+            corner_b = node_virtual_source.get(node_b.idx)
+
+            # --- CONFLICT CHECK: A and B have different virtual sources ---
+            #  ---> They belong to different wavefronts, 2D circular wave is invalid.
+            #! Problem: I do not know if forcing it to the 1D case is correct
+
+            if corner_a is not corner_b:  # two different virtual sources --> force the 1D fallback 
+                tA = d_A_raw + node.distance_to_other_node(node_a)
+                tB = d_B_raw + node.distance_to_other_node(node_b)
+                if tA <= tB:
+                    t_1d = tA
+                    # Update correctly the source
+                    new_source = corner_a if corner_a is not None else node_a
+                else:
+                    t_1d = tB
+                    new_source = corner_b if corner_b is not None else node_b
+                # Update the distance if it is the lowest
+                if t_1d < dist:
+                    dist = t_1d
+                    #! I do not know if this method for the assignement of the 
+                    #! source is too slow 
+                    if new_source is not None:
+                        node_virtual_source[node.idx] = new_source
+                    else:
+                        node_virtual_source.pop(node.idx, None)
+                continue
+
+            # --- SAME SOURCE ---
+            if corner_a is not None:
+                S_prime = corner_a
+                d_A = d_A_raw - S_prime.dist 
+                d_B = d_B_raw - S_prime.dist
+            else:
+                S_prime = None
+                d_A = d_A_raw
+                d_B = d_B_raw
+
+            # ====== STEP 1 ---> Obtain all necessary information about the element AB
             AB = node_b.coords - node_a.coords
             AC = node.coords - node_a.coords
             normal = np.cross(AB, AC)
-            normal = normal / np.linalg.norm(normal)#*unit normal vector
+            
+            # Avoid all degenerate cases: trhee collinear points...
+            if np.linalg.norm(normal) < 1e-14:
+                continue 
 
-            L = np.linalg.norm(AB) # compute the distance AB
-            # Local frame centered in A with x parallel to AB
+            normal = normal / np.linalg.norm(normal)
+            L = np.linalg.norm(AB)
+            if L < 1e-14:
+                continue   
+            # Create a local frame centered in A with x // to AB and poiniting towards B
             x_hat = AB / L
             y_hat = np.cross(normal, x_hat)
             y_hat = y_hat / np.linalg.norm(y_hat)
 
 
-            # STEP 3 ---> C Coordinates on the local frame
-            x_C = np.dot(AC,x_hat)
-            y_C = np.dot(AC,y_hat)
+            # ====== STEP 2 ---> C coordinates in the local frame
+            x_C = np.dot(AC, x_hat)
+            y_C = np.dot(AC, y_hat)
 
-
-            # STEP 4 ---> Virtual Source S coordinates
+            # ====== STEP 3 ---> Virtual Source S coordinates in the local frame
             x_S = (d_A**2 - d_B**2 + L**2) / (2*L)
             sq_y_S = d_A**2 - x_S**2
 
-            # Check - if the value under the square root is under lower than zero: fall back to the 1D case
+            # Avoid Floating Point Errors
             if sq_y_S < 0.0:
-            # fallback 1D
-                t = min(d_A + node.distance_to_other_node(node_a),
-                        d_B + node.distance_to_other_node(node_b))
-                dist = min(dist, t)
-                continue
+                sq_y_S = 0.0  
+                # In fact, per construction, sq_y_S >= 0 always
 
             key_AB = edge_key(node_a, node_b)
-            # We store in each edge of triangle the position of the virtual source S
+            # Store in each edge of triangle the position of the virtual source S
 
             if key_AB in edge_curvature:
                 # It means that the virtual source position is already known
@@ -276,46 +316,98 @@ def eikonal_sol_circ(node, edge_curvature, F=1.0):
                 sign_y_S = np.sign(y_S_test) 
 
                 if sign_y_S == 0:
-                    sign_y_S = 1.0   # degenerate case: C exactly on AB  
+                    sign_y_S = 1.0  # degenerate case: C exactly on AB 
             else:
                 # If it is the first time we cross this edge, we impose that the position 
                 # of the source S is on the opposite side of the vertex C
                 sign_y_S = -np.sign(y_C)
                 if sign_y_S == 0:
-                    sign_y_S = 1.0   # degenerate case: C exactly on AB
+                    sign_y_S = 1.0 # degenerate case: C exactly on AB
             
-            # We can finally determine the position of the source S
+            # The position of the source S can be finally obtained
             y_S = sign_y_S * np.sqrt(sq_y_S)
 
-            
-            # STEP 5 --> Determine the distane of C from the source S
-            t = np.sqrt( (x_C-x_S)**2 + (y_C-y_S)**2  )
-            dist = min(dist, t)
+            # ====== STEP 4 ---> UPWIND CONDITION (Shadow Zone Detection) ---
+            # The line from S(x_S, y_S) to C(x_C, y_C) must pass through the edge AB.
+            # Intersect the ray with the local x-axis (y=0).
+            if abs(y_C - y_S) > 1e-12:
+                x_int = x_S - y_S * (x_C - x_S) / (y_C - y_S)
+            else:
+                x_int = -1.0 # Force fail if line is parallel
+
+            # If the ray falls outside [0, L], the wave is bending around a corner.
+            if not (-1e-10 <= x_int <= L + 1e-10):
+                tA = d_A_raw + node.distance_to_other_node(node_a)
+                tB = d_B_raw + node.distance_to_other_node(node_b)
+
+                if tA <= tB:
+                    t_1d = tA
+                    # A is the pivot point. It becomes the new virtual source (Corner).
+                    new_source = corner_a if corner_a is not None else node_a
+                else:
+                    t_1d = tB
+                    new_source = corner_b if corner_b is not None else node_b
+
+                if t_1d < dist:
+                    dist = t_1d
+                    #! I do not know if this method for the assignement of the 
+                    #! source is too slow 
+                    if new_source is not None:
+                        node_virtual_source[node.idx] = new_source
+                    else:
+                        node_virtual_source.pop(node.idx, None)
+                continue
 
 
-            # STEP 6  --> update the curvature on the new edges AC and BC
+            # ====== STEP 5 ---> Determine the distane of C from the source S
+            t_local = np.sqrt( (x_C-x_S)**2 + (y_C-y_S)**2  )
+            # If a virtual source has been used, take that into consideration
+            if S_prime is not None: 
+                t_total = t_local + S_prime.dist
+            else:
+                t_total = t_local
 
-                
-            # Reconstruct S position in the global 2D coordinates
-            S = node_a.coords + x_S*x_hat + y_S*y_hat
+            if t_total < dist:
+                dist = t_total
+                if S_prime is not None:
+                    node_virtual_source[node.idx] = S_prime 
+                else:
+                    node_virtual_source.pop(node.idx, None)
 
-            # update the edge AC
-            store_virtual_source(node_a, node, S, edge_curvature)
+            # ====== STEP 5 ---> Register virtual source for future layers
+            S_global = node_a.coords + x_S*x_hat + y_S*y_hat
+            store_virtual_source(node_a, node, S_global, edge_curvature)
+            store_virtual_source(node_b, node, S_global, edge_curvature)
 
-            # Update the edge BC
-            store_virtual_source(node_b, node, S, edge_curvature)
 
-
-        # CASE 2 --> Degenerate cases - only one node alive
-        # in these cases we need to compute the 1d distance
+        # ------------------------------------------
+        # CASE 2: Degenerate (Only one node ALIVE)
+        # ------------------------------------------
+        # 1D fallback
         elif node_a.state == 'ALIVE':
-            dist_1d = node_a.dist + node.distance_to_other_node(node_a)   # T(A) + b*F
-            dist = min(dist, dist_1d)
-
+            t_1d = node_a.dist + node.distance_to_other_node(node_a)
+            if t_1d < dist:
+                dist = t_1d
+                corner = node_virtual_source.get(node_a.idx)
+                #! I do not know if this method for the assignement of the 
+                #! source is too slow 
+                if corner is not None:
+                    node_virtual_source[node.idx] = corner
+                else:
+                    node_virtual_source.pop(node.idx, None)
+ 
         elif node_b.state == 'ALIVE':
-            dist_1d = node_b.dist + node.distance_to_other_node(node_b)  # T(B) + c*F
-            dist = min(dist, dist_1d)
-       
+            t_1d = node_b.dist + node.distance_to_other_node(node_b)
+            if t_1d < dist:
+                dist = t_1d
+                corner = node_virtual_source.get(node_b.idx)
+                #! I do not know if this method for the assignement of the 
+                #! source is too slow 
+                if corner is not None:
+                    node_virtual_source[node.idx] = corner
+                else:
+                    node_virtual_source.pop(node.idx, None)
+    
     return dist
 
 

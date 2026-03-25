@@ -13,7 +13,7 @@ import mesh_generation
 # ------------------------ Parameters ------------------------
 # ============================================================
 
-MESH_TYPE = 'cylinder'   # 'square_surface' or 'cylinder'
+MESH_TYPE = 'square_surface'   # 'square_surface' or 'cylinder'
 N_VALUES  = [5 * 2**i for i in range(8)]
 
 # For cylinder: source specified as (theta_deg, z) in the unrolled domain
