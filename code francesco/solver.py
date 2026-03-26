@@ -260,7 +260,7 @@ def geodesic_lshape(node_coords, source_coords, L=1.0):
         d_via_corner = (np.linalg.norm(source_coords - corner) +
                         np.linalg.norm(node_coords   - corner))
         # min() is a safety net for points exactly on the corner boundary
-        return min(d_direct, d_via_corner)
+        return d_via_corner
 
     return d_direct
 
