@@ -196,18 +196,46 @@ def fmm_algorithm_circ(node_list, source_nodes):
         # Point 2 -> set the minimum distance node as ALIVE 
         current_node.state = 'ALIVE'
 
+
+        # PROBLEM: In the last version, the update of the virtual source/edge_curvature
+        #          was done in the eikonal solver, when the nodes were all in the state 
+        #          TRIAL. However this would have caused a loop fallback since it will not
+        #          be updated after it has been reached for the first time, propagating  
+        #          an error, since the first reach is not usually the best one.
+        # SOLUTION: Update the curvature or virtual source only when the node has become 
+        #           ALIVE, i.e. when the minimum distance has been computed. 
+        if hasattr(current_node, 'edge_updates') and current_node.edge_updates:
+            for k, S in current_node.edge_updates:
+                if k not in edge_curvature:
+                    edge_curvature[k] = S.copy()
+
+        if hasattr(current_node, 'virtual_source'):
+            if current_node.virtual_source is not None:
+                node_virtual_source[current_node.idx] = current_node.virtual_source
+            else:
+                node_virtual_source.pop(current_node.idx, None)
+
+
+
         # Point 3 -> Recompute all node distance (if not ALIVE) and put all of them as TRIAL
         for neighbor in current_node.neighbors:
             
             # Recompute the distance of the neighbour nodes only if not ALIVE
             if neighbor.state != 'ALIVE':
                 old_dist = neighbor.dist
-                new_dist = eikonal_sol_circ(neighbor, edge_curvature, node_virtual_source)
 
-                # Update the trial distance only if it is lower than the previously computed (always true if the node was FAR)
-                # see pag 4
+                # Now the function eikonal_sol_circ does not alter the global state, update
+                # only when the node becomes ALIVE.
+                new_dist, edge_upd, node_vs = eikonal_sol_circ(neighbor, edge_curvature, node_virtual_source)
+
+                # Update the trial distance only if it is lower than the previously computed 
+                # (always true if the node was FAR)
                 if new_dist < old_dist:
                     neighbor.dist = new_dist
+                    # Save the date of the edge update and the virtual source temporaneally 
+                    # to not update them globally
+                    neighbor.edge_updates = edge_upd
+                    neighbor.virtual_source = node_vs
                     neighbor.state = 'TRIAL' # Set the node status as TRIAL, in case it was FAR
                     heap_push(neighbor, new_dist)
 
@@ -215,7 +243,10 @@ def fmm_algorithm_circ(node_list, source_nodes):
 
 
 def eikonal_sol_circ(node, edge_curvature, node_virtual_source):
+    
     dist = float('inf')  # Distance Initialization
+    best_edge_updates = []
+    best_node_vs = None
 
     for tri in node.adjacent_triangles: # Compute all the distance from all adjactens triangles
         others = [n for n in tri.nodes if n.node_tag != node.node_tag]
@@ -254,22 +285,11 @@ def eikonal_sol_circ(node, edge_curvature, node_virtual_source):
                     dist = t_1d
                     #! I do not know if this method for the assignement of the 
                     #! source is too slow 
-                    if new_source is not None:
-                        node_virtual_source[node.idx] = new_source
-                    else:
-                        node_virtual_source.pop(node.idx, None)
+                    best_edge_updates = []
+                    best_node_vs = new_source
                 continue
 
             # --- SAME SOURCE ---
-            if corner_a is not None:
-                S_prime = corner_a
-                d_A = d_A_raw - S_prime.dist 
-                d_B = d_B_raw - S_prime.dist
-            else:
-                S_prime = None
-                d_A = d_A_raw
-                d_B = d_B_raw
-
             # ====== STEP 1 ---> Obtain all necessary information about the element AB
             AB = node_b.coords - node_a.coords
             AC = node.coords - node_a.coords
@@ -294,40 +314,64 @@ def eikonal_sol_circ(node, edge_curvature, node_virtual_source):
             y_C = np.dot(AC, y_hat)
 
             # ====== STEP 3 ---> Virtual Source S coordinates in the local frame
-            x_S = (d_A**2 - d_B**2 + L**2) / (2*L)
-            sq_y_S = d_A**2 - x_S**2
+            if corner_a is not None:
+                # If the corner A has a virtual source registerd, it can be used 
+                # directly to compute the distances
+                S_prime = corner_a
+                d_A = d_A_raw - S_prime.dist 
+                d_B = d_B_raw - S_prime.dist
+                
+                # Use directly the coordinates of S_prime and porject them on the 
+                # local plane
+                S_vec = S_prime.coords - node_a.coords
+                x_S = np.dot(S_vec, x_hat)
+                y_S = np.dot(S_vec, y_hat)
 
-            # Avoid Floating Point Errors
-            if sq_y_S < 0.0:
-                sq_y_S = 0.0  
+            else: # Use the previous logic
+
+                S_prime = None
+                d_A = d_A_raw
+                d_B = d_B_raw
+
+                x_S = (d_A**2 - d_B**2 + L**2) / (2*L)
+                sq_y_S = d_A**2 - x_S**2
+
+                # Avoid Floating Point Errors
+                if sq_y_S < 0.0:
+                    sq_y_S = 0.0  
                 # In fact, per construction, sq_y_S >= 0 always
 
-            key_AB = edge_key(node_a, node_b)
-            # Store in each edge of triangle the position of the virtual source S
+                key_AB = edge_key(node_a, node_b)
+                # Store in each edge of triangle the position of the virtual source S
 
-            if key_AB in edge_curvature:
-                # It means that the virtual source position is already known
-                # --> Read the dictionary
+                if key_AB in edge_curvature:
+                    # It means that the virtual source position is already known
+                    # --> Read the dictionary
 
-                # Re-project the position of the source in the local frame
-                S_dict = edge_curvature[key_AB]
-                S_local = S_dict - node_a.coords
-                y_S_test = np.dot(S_local, y_hat)
-                sign_y_S = np.sign(y_S_test) 
+                    # Re-project the position of the source in the local frame
+                    S_dict = edge_curvature[key_AB]
+                    S_local = S_dict - node_a.coords
+                    y_S_test = np.dot(S_local, y_hat)
+                    sign_y_S = np.sign(y_S_test) 
 
-                if sign_y_S == 0:
-                    sign_y_S = 1.0  # degenerate case: C exactly on AB 
-            else:
-                # If it is the first time we cross this edge, we impose that the position 
-                # of the source S is on the opposite side of the vertex C
-                sign_y_S = -np.sign(y_C)
-                if sign_y_S == 0:
-                    sign_y_S = 1.0 # degenerate case: C exactly on AB
-            
-            # The position of the source S can be finally obtained
-            y_S = sign_y_S * np.sqrt(sq_y_S)
+                    if sign_y_S == 0: 
+                        sign_y_S = 1.0  # degenerate case: C exactly on AB
+
+                else:
+                    # If it is the first time we cross this edge, we impose that the position 
+                    # of the source S is on the opposite side of the vertex C
+                    sign_y_S = -np.sign(y_C)
+
+                    if sign_y_S == 0: 
+                        sign_y_S = 1.0 # degenerate case: C exactly on AB
+
+                # The position of the source S can be finally obtained
+                y_S = sign_y_S * np.sqrt(sq_y_S)
+
+
 
             # ====== STEP 4 ---> UPWIND CONDITION (Shadow Zone Detection) ---
+
             # The line from S(x_S, y_S) to C(x_C, y_C) must pass through the edge AB.
             # Intersect the ray with the local x-axis (y=0).
             if abs(y_C - y_S) > 1e-12:
@@ -342,7 +386,6 @@ def eikonal_sol_circ(node, edge_curvature, node_virtual_source):
 
                 if tA <= tB:
                     t_1d = tA
-                    # A is the pivot point. It becomes the new virtual source (Corner).
                     new_source = corner_a if corner_a is not None else node_a
                 else:
                     t_1d = tB
@@ -350,12 +393,8 @@ def eikonal_sol_circ(node, edge_curvature, node_virtual_source):
 
                 if t_1d < dist:
                     dist = t_1d
-                    #! I do not know if this method for the assignement of the 
-                    #! source is too slow 
-                    if new_source is not None:
-                        node_virtual_source[node.idx] = new_source
-                    else:
-                        node_virtual_source.pop(node.idx, None)
+                    best_edge_updates = []
+                    best_node_vs = new_source
                 continue
 
 
@@ -369,15 +408,18 @@ def eikonal_sol_circ(node, edge_curvature, node_virtual_source):
 
             if t_total < dist:
                 dist = t_total
-                if S_prime is not None:
-                    node_virtual_source[node.idx] = S_prime 
-                else:
-                    node_virtual_source.pop(node.idx, None)
 
-            # ====== STEP 5 ---> Register virtual source for future layers
-            S_global = node_a.coords + x_S*x_hat + y_S*y_hat
-            store_virtual_source(node_a, node, S_global, edge_curvature)
-            store_virtual_source(node_b, node, S_global, edge_curvature)
+                # Prepare the virtual source to return
+                best_node_vs = S_prime
+                
+                # Compute the global position of the virtual source S
+                S_global = node_a.coords + x_S * x_hat + y_S * y_hat
+
+                    # ====== STEP 6 ---> Update only locally and leave the update to the FMM algorithm
+                best_edge_updates = [
+                    (edge_key(node_a, node), S_global),
+                    (edge_key(node_b, node), S_global)
+                    ]
 
 
         # ------------------------------------------
@@ -388,27 +430,17 @@ def eikonal_sol_circ(node, edge_curvature, node_virtual_source):
             t_1d = node_a.dist + node.distance_to_other_node(node_a)
             if t_1d < dist:
                 dist = t_1d
-                corner = node_virtual_source.get(node_a.idx)
-                #! I do not know if this method for the assignement of the 
-                #! source is too slow 
-                if corner is not None:
-                    node_virtual_source[node.idx] = corner
-                else:
-                    node_virtual_source.pop(node.idx, None)
+                best_edge_updates = []
+                best_node_vs = node_virtual_source.get(node_a.idx)
  
         elif node_b.state == 'ALIVE':
             t_1d = node_b.dist + node.distance_to_other_node(node_b)
             if t_1d < dist:
                 dist = t_1d
-                corner = node_virtual_source.get(node_b.idx)
-                #! I do not know if this method for the assignement of the 
-                #! source is too slow 
-                if corner is not None:
-                    node_virtual_source[node.idx] = corner
-                else:
-                    node_virtual_source.pop(node.idx, None)
+                best_edge_updates = []
+                best_node_vs = node_virtual_source.get(node_b.idx)
     
-    return dist
+    return dist, best_edge_updates, best_node_vs
 
 
 
@@ -423,12 +455,10 @@ def edge_key(node_1, node_2):
     """
     return (min(node_1.idx, node_2.idx), max(node_1.idx, node_2.idx))
 
-
+"""
 def store_virtual_source(node_1, node_2, S, edge_curvature):
-    """
     It saves the 3D position of the virtual source S for the edge (node_1, node_2).
     It does not overwrite it if already present
-    """
 
     #! Understand if when we will need to reinitialize the virtual source, we will need to change this code
 
@@ -440,34 +470,5 @@ def store_virtual_source(node_1, node_2, S, edge_curvature):
     #Update the position of the virtual source S for the edge
     edge_curvature[key] = S.copy()
 
-
 """
-def store_sign(node_1, node_2, S, edge_curvature, y_hat):
-    key = edge_key(node_1, node_2)
-    if key in edge_curvature:
-        return
 
-    if node_1.idx < node_2.idx:
-        node_A, node_B = node_1, node_2
-    else:
-        node_A, node_B = node_2, node_1
-
-    edge_vec = node_B.coords - node_A.coords
-    L_edge = np.linalg.norm(edge_vec)
-    if L_edge < 1e-14:
-        return
-
-    S_local = S - node_A.coords
-    y_S_canonical = np.dot(S_local, y_hat)
-
-
-    flip = (node_1.idx > node_2.idx)
-    if flip:
-        y_S_canonical = -y_S_canonical
-
-    sign = float(np.sign(y_S_canonical))
-    if sign == 0.0:
-        sign = 1.0
-
-    edge_curvature[key] = sign
-"""

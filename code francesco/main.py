@@ -117,10 +117,14 @@ def main(mesh_type=MESH_TYPE, fmm_type=FMM_TYPE):
 
     if mesh_type in ('square_surface', 'l_shape'):
         solver.Plot_Isolines(node_list, element_list)
+        solver.Plot_Error_Field(node_list, element_list, mesh_type, snapped_coords, L=1.0)
     elif mesh_type == 'cylinder':
         solver.Plot_Isolines_3D(node_list, element_list,
                                 source_coords=snapped_coords)
+        solver.Plot_Error_Field(node_list, element_list, mesh_type, snapped_coords, R=0.5)
 
+    plt.show()
+    
     gmsh.finalize()
 
 

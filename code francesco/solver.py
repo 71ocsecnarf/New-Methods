@@ -148,89 +148,158 @@ def Reset_Node_State(node_list):
 
 
 def compute_err(node_list, source_coord):
-
+    """
+    Compute max, relative, pointwise, and L2 errors for the standard geometry.
+    Returns: (max_error, max_relative_error, pointwise_errors_array, L2_error)
+    """
     errors = []
     errors_rel = []
 
     for node in node_list:
+        # Avoid plotting crashes or math errors if a node is not reached by the FMM
+        if node.dist == float('inf'):
+            errors.append(0.0)  
+            continue
+            
         ex_dist = np.linalg.norm(node.coords - source_coord)
         err_i = abs(ex_dist - node.dist)
         errors.append(err_i)
+        
         if ex_dist > 1e-14:
             errors_rel.append(err_i / ex_dist)
 
-    err = np.max(errors) 
-    err_rel = np.max(errors_rel)
-    e_l2 = np.sqrt(np.mean(np.array(errors)**2))
+    err = np.max(errors) if errors else 0.0
+    err_rel = np.max(errors_rel) if errors_rel else 0.0
+    e_l2 = np.sqrt(np.mean(np.array(errors)**2)) if errors else 0.0
 
-    return err, err_rel, e_l2
-
-
-"""
-def compute_err_cylinder(node_list, true_source, R):
-    #Geodesic distance on a cylinder = straight line on the unrolled rectangle:
-        #d = sqrt( (R * delta_theta)^2 + delta_z^2 )
-    #Returns (max_err, l2_err) — stesso formato di solver.compute_err()
-    x0, y0, z0 = true_source
-    theta0 = np.arctan2(y0, x0)
-
-    max_err = 0.0
-    sum_sq  = 0.0
-    count   = 0
-
-    for node in node_list:
-        if node.dist == float('inf'):
-            continue
-        x, y, z   = node.coords
-        theta     = np.arctan2(y, x)
-        d_theta   = (theta - theta0 + np.pi) % (2 * np.pi) - np.pi
-        d_exact   = np.sqrt((R * d_theta)**2 + (z - z0)**2)
-        err       = abs(node.dist - d_exact)
-        max_err   = max(max_err, err)
-        sum_sq   += err**2
-        count    += 1
-
-    l2_err = np.sqrt(sum_sq / count) if count > 0 else 0.0
-    return max_err, l2_err
-
-"""
-
+    # Returning the errors array before e_l2 ensures that result[-1] is still the L2 error
+    return err, err_rel, np.array(errors), e_l2
 
 
 def compute_err_cylinder(node_list, true_source, R):
     """
-    Geodesic distance on a cylinder (unrolled rectangle):
-        d = sqrt( (R * delta_theta)^2 + delta_z^2 )
-
-    true_source must be the SNAPPED source coordinates (coords of the
-    closest mesh node), not the theoretical source point. This ensures
-    the FMM distance and the exact distance share the same origin.
+    Compute errors for the cylinder geometry.
+    Returns: (max_error, pointwise_errors_array, L2_error)
     """
     x0, y0, z0 = true_source
-    # Recompute R from the snapped point to be consistent
-    # (the snapped node is ON the mesh, which may differ slightly from R)
     R_source = np.sqrt(x0**2 + y0**2)
     theta0   = np.arctan2(y0, x0)
 
     max_err = 0.0
     sum_sq  = 0.0
     count   = 0
+    errors  = []  # List needed for the error plot
 
     for node in node_list:
         if node.dist == float('inf'):
+            errors.append(0.0)
             continue
+            
         x, y, z = node.coords
         theta   = np.arctan2(y, x)
         d_theta = (theta - theta0 + np.pi) % (2 * np.pi) - np.pi
-        # Use R_source (from snapped point) for arc length calculation
         d_exact = np.sqrt((R_source * d_theta)**2 + (z - z0)**2)
         err     = abs(node.dist - d_exact)
+        errors.append(err)
+        
         max_err = max(max_err, err)
         sum_sq += err**2
         count  += 1
 
     l2_err = np.sqrt(sum_sq / count) if count > 0 else 0.0
-    return max_err, l2_err
+    
+    return max_err, np.array(errors), l2_err
+
+
+def compute_err_l_shape(node_list, source_coord, L=1.0):
+    """
+    Compute geodesic errors for the L-shape geometry.
+    Returns: (max_error, max_relative_error, pointwise_errors_array, L2_error)
+    """
+    errors     = []  
+    errors_rel = []  
+
+    for node in node_list:
+        if node.dist == float('inf'):
+            errors.append(0.0)
+            continue
+            
+        d_exact = geodesic_lshape(node.coords, source_coord, L)
+        err_i = abs(d_exact - node.dist)
+        errors.append(err_i)
+
+        if d_exact > 1e-14:
+            errors_rel.append(err_i / d_exact)
+
+    err     = np.max(errors) if errors else 0.0
+    err_rel = np.max(errors_rel) if errors_rel else 0.0
+    e_l2    = np.sqrt(np.mean(np.array(errors) ** 2)) if errors else 0.0 
+
+    return err, err_rel, np.array(errors), e_l2
+
+def geodesic_lshape(node_coords, source_coords, L=1.0):
+    """
+    Exact geodesic distance on the L-shape domain.
+
+    The missing quadrant is (x > L/2, y < L/2).
+    The concave corner is at C = (L/2, L/2).
+
+    If the straight line S->P crosses the boundary of the missing quadrant,
+    the geodesic must detour through the corner C:
+        d = dist(S, C) + dist(C, P)
+
+    Otherwise the Euclidean distance is exact.
+    """
+    corner = np.array([L / 2.0, L / 2.0, 0.0])
+
+    # Direct Euclidean distance
+    d_direct = np.linalg.norm(node_coords - source_coords)
+
+    # Check if the straight segment crosses the missing quadrant boundary
+    if _segment_crosses_missing_quadrant(source_coords, node_coords, L):
+        d_via_corner = (np.linalg.norm(source_coords - corner) +
+                        np.linalg.norm(node_coords   - corner))
+        # min() is a safety net for points exactly on the corner boundary
+        return min(d_direct, d_via_corner)
+
+    return d_direct
+
+def _segment_crosses_missing_quadrant(S, P, L):
+    """
+    Check whether the straight segment S->P passes through the missing
+    quadrant of the L-shape, i.e. the rectangle (L/2 < x < L, 0 < y < L/2).
+
+    Strategy: check if the segment crosses either of the two boundary edges
+    of the missing quadrant that are interior to the bounding box:
+      - Vertical edge  : x = L/2,  y in [0,   L/2]
+      - Horizontal edge: y = L/2,  x in [L/2, L  ]
+
+    If it crosses one of them going INTO the missing quadrant, return True.
+    """
+    x_S, y_S = S[0], S[1]
+    x_P, y_P = P[0], P[1]
+    dx = x_P - x_S
+    dy = y_P - y_S
+
+    # --- Check intersection with vertical edge x = L/2, y in [0, L/2] ---
+    if abs(dx) > 1e-14:
+        t = (L/2 - x_S) / dx          # Parameter t in [0,1] along segment S->P
+        if 0.0 < t < 1.0:
+            y_int = y_S + t * dy       # y coordinate at the intersection
+            if 0.0 <= y_int <= L/2:    # Intersection is on the interior edge
+                # The segment crosses x=L/2 in the lower half
+                # --> it is entering or exiting the missing quadrant
+                return True
+
+    # --- Check intersection with horizontal edge y = L/2, x in [L/2, L] ---
+    if abs(dy) > 1e-14:
+        t = (L/2 - y_S) / dy
+        if 0.0 < t < 1.0:
+            x_int = x_S + t * dx
+            if L/2 <= x_int <= L:      # Intersection is on the interior edge
+                return True
+
+    return False
 
 
 
@@ -265,29 +334,7 @@ def Plot_Isolines(node_list, element_list):
     plt.title("FMM - Plot of the levelsets")
     plt.xlabel("X")
     plt.ylabel("Y")
-    plt.show()
-
-
-"""
-def plot_convergence(h_values, err_inf, method_name):
-
-    h_arr = np.array(h_values)
-
-    plt.figure(100, figsize=(8,6))
-    
-    plt.loglog(h_arr, err_inf, 'o-', label = method_name)
-
-    plt.xlabel('h (mesh size)')
-    plt.ylabel('Error')
-    plt.title('FMM Convergence')
-    plt.legend()
-    plt.grid(True, which='both')
-
-"""
-
-
-
-
+    #plt.show()
 
 
 def Plot_Isolines_3D(node_list, element_list, source_coords=None):
@@ -381,7 +428,7 @@ def Plot_Isolines_3D(node_list, element_list, source_coords=None):
     ax.set_zlabel("Z")
 
     plt.tight_layout()
-    plt.show()
+    #plt.show()
 
 
 def plot_convergence(h_values, errors_l2_fmm, errors_l2_circ, title, save_name):
@@ -415,4 +462,63 @@ def plot_convergence(h_values, errors_l2_fmm, errors_l2_circ, title, save_name):
     plt.gca().invert_xaxis()
     plt.tight_layout()
     plt.savefig(save_name)
-    plt.show()
+    #plt.show()
+
+
+
+
+def Plot_Error_Field(node_list, element_list, mesh_type, true_source, R=0.5, L=1.0):
+    import matplotlib.cm as cm
+    from matplotlib.colors import Normalize
+    from matplotlib.cm import ScalarMappable
+    import matplotlib.pyplot as plt
+    
+    x = np.array([n.coords[0] for n in node_list])
+    y = np.array([n.coords[1] for n in node_list])
+    z_coord = np.array([n.coords[2] for n in node_list])
+    
+    # Estrazione dell'array degli errori tramite le funzioni matematiche già esistenti
+    if mesh_type == 'square_surface':
+        _, _, errors, _ = compute_err(node_list, true_source)
+    elif mesh_type == 'cylinder':
+        _, errors, _ = compute_err_cylinder(node_list, true_source, R)
+    elif mesh_type == 'l_shape':
+        _, _, errors, _ = compute_err_l_shape(node_list, true_source, L)
+        
+    triangles = np.array([[n.idx for n in e.nodes] for e in element_list])
+    
+    # --- 3D PLOT for Cylinder ---
+    if mesh_type == 'cylinder':
+        fig = plt.figure(figsize=(10, 8))
+        ax = fig.add_subplot(111, projection='3d')
+        
+        face_errors = errors[triangles].mean(axis=1)
+        norm_c = Normalize(vmin=errors.min(), vmax=errors.max())
+        cmap = cm.inferno  
+        colors = cmap(norm_c(face_errors))
+        
+        surf = ax.plot_trisurf(x, y, z_coord, triangles=triangles, shade=False, antialiased=False, alpha=0.9)
+        surf.set_facecolors(colors)
+        
+        sm = ScalarMappable(cmap=cmap, norm=norm_c)
+        sm.set_array([])
+        fig.colorbar(sm, ax=ax, shrink=0.5, label="Absolute Error")
+        
+        ax.set_title(f"Error Distribution - {mesh_type}")
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.set_zlabel("Z")
+        
+    # --- 2D PLOT for L-Shape and Square ---
+    else:
+        plt.figure(figsize=(8, 6))
+        plt.gca().set_aspect('equal')
+        
+        cntr = plt.tricontourf(x, y, triangles, errors, levels=40, cmap="inferno")
+        plt.colorbar(cntr, label="Absolute Error")
+        
+        plt.triplot(x, y, triangles, color='black', alpha=0.1, linewidth=0.5)
+        
+        plt.title(f"Error Distribution - {mesh_type}")
+        plt.xlabel("X")
+        plt.ylabel("Y")
