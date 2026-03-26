@@ -253,32 +253,7 @@ def eikonal_sol_circ(node, edge_curvature, node_virtual_source):
         node_a, node_b = others[0], others[1]
 
         # ------------------------------------------
-        # 1D FALLBACKS (Evaluated inside the loop)
-        # ------------------------------------------
-        if node_a.state == 'ALIVE':
-            t_1d_a = node_a.dist + node.distance_to_other_node(node_a)
-            if t_1d_a < dist:
-                dist = t_1d_a
-                best_node_vs = node_a
-                S_global = node_a.coords
-                best_edge_updates = [
-                    (edge_key(node_a, node), S_global),
-                    (edge_key(node_b, node), S_global)
-                ]
-
-        if node_b.state == 'ALIVE':
-            t_1d_b = node_b.dist + node.distance_to_other_node(node_b)
-            if t_1d_b < dist:
-                dist = t_1d_b
-                best_node_vs = node_b
-                S_global = node_b.coords
-                best_edge_updates = [
-                    (edge_key(node_a, node), S_global),
-                    (edge_key(node_b, node), S_global)
-                ]
-
-        # ------------------------------------------
-        # CASE 1: Both nodes are ALIVE (2D Propagation)
+        # CASE 1: Both nodes are ALIVE
         # ------------------------------------------
         if node_a.state == 'ALIVE' and node_b.state == 'ALIVE':
             if node_a.dist > node_b.dist: # d(A) < d(B) as a convention
@@ -287,17 +262,49 @@ def eikonal_sol_circ(node, edge_curvature, node_virtual_source):
             d_A_raw = node_a.dist
             d_B_raw = node_b.dist
 
+            # Get the registered virtual sources (if present) for the vertices A and B
             corner_a = node_virtual_source.get(node_a.idx)
             corner_b = node_virtual_source.get(node_b.idx)
 
-            S_a_dist = 0.0 if corner_a is None else corner_a.dist
-            S_b_dist = 0.0 if corner_b is None else corner_b.dist
-            
+            # --- CONFLICT CHECK: A and B have different virtual sources ---
+            #  ---> They belong to different wavefronts, 2D circular wave is invalid.
+            #! Problem: I do not know if forcing it to the 1D case is correct
+
+            if corner_a is not corner_b:  # two different virtual sources --> force the 1D fallback 
+                tA = d_A_raw + node.distance_to_other_node(node_a)
+                tB = d_B_raw + node.distance_to_other_node(node_b)
+                if tA <= tB:
+                    t_1d = tA
+                    # Update correctly the source
+                    new_source = corner_a if corner_a is not None else node_a
+                else:
+                    t_1d = tB
+                    new_source = corner_b if corner_b is not None else node_b
+                # Update the distance if it is the lowest
+                if t_1d < dist:
+                    dist = t_1d
+                    #! I do not know if this method for the assignement of the 
+                    #! source is too slow 
+                    best_edge_updates = []
+                    best_node_vs = new_source
+                continue
+
+            # --- SAME SOURCE ---
+            if corner_a is not None:
+                S_prime = corner_a
+                d_A = d_A_raw - S_prime.dist 
+                d_B = d_B_raw - S_prime.dist
+            else:
+                S_prime = None
+                d_A = d_A_raw
+                d_B = d_B_raw
+
             # ====== STEP 1 ---> Obtain all necessary information about the element AB
             AB = node_b.coords - node_a.coords
             AC = node.coords - node_a.coords
             normal = np.cross(AB, AC)
             
+            # Avoid all degenerate cases: trhee collinear points...
             if np.linalg.norm(normal) < 1e-14:
                 continue 
 
@@ -305,132 +312,121 @@ def eikonal_sol_circ(node, edge_curvature, node_virtual_source):
             L = np.linalg.norm(AB)
             if L < 1e-14:
                 continue   
-                
+            # Create a local frame centered in A with x // to AB and poiniting towards B
             x_hat = AB / L
             y_hat = np.cross(normal, x_hat)
             y_hat = y_hat / np.linalg.norm(y_hat)
 
+
+            # ====== STEP 2 ---> C coordinates in the local frame
             x_C = np.dot(AC, x_hat)
             y_C = np.dot(AC, y_hat)
 
             # ====== STEP 3 ---> Virtual Source S coordinates in the local frame
-            if corner_a is corner_b:
-                S_prime = corner_a
-                d_A = d_A_raw - S_a_dist
-                d_B = d_B_raw - S_a_dist
-                
-                x_S = (d_A**2 - d_B**2 + L**2) / (2*L)
-                sq_y_S = d_A**2 - x_S**2
+            x_S = (d_A**2 - d_B**2 + L**2) / (2*L)
+            sq_y_S = d_A**2 - x_S**2
 
-                # FIX: Reject impossible wavefronts instead of forcing sq_y_S to 0
-                if sq_y_S < -1e-10 or d_A < 0.0 or d_B < 0.0:
-                    t_total = float('inf')
+            # Avoid Floating Point Errors
+            if sq_y_S < 0.0:
+                sq_y_S = 0.0  
+                # In fact, per construction, sq_y_S >= 0 always
+
+            key_AB = edge_key(node_a, node_b)
+            # Store in each edge of triangle the position of the virtual source S
+
+            if key_AB in edge_curvature:
+                # It means that the virtual source position is already known
+                # --> Read the dictionary
+
+                # Re-project the position of the source in the local frame
+                S_dict = edge_curvature[key_AB]
+                S_local = S_dict - node_a.coords
+                y_S_test = np.dot(S_local, y_hat)
+                sign_y_S = np.sign(y_S_test) 
+
+                if sign_y_S == 0:
+                    sign_y_S = 1.0  # degenerate case: C exactly on AB 
+            else:
+                # If it is the first time we cross this edge, we impose that the position 
+                # of the source S is on the opposite side of the vertex C
+                sign_y_S = -np.sign(y_C)
+                if sign_y_S == 0:
+                    sign_y_S = 1.0 # degenerate case: C exactly on AB
+            
+            # The position of the source S can be finally obtained
+            y_S = sign_y_S * np.sqrt(sq_y_S)
+
+
+            # ====== STEP 4 ---> UPWIND CONDITION (Shadow Zone Detection) ---
+
+            # The line from S(x_S, y_S) to C(x_C, y_C) must pass through the edge AB.
+            # Intersect the ray with the local x-axis (y=0).
+            if abs(y_C - y_S) > 1e-12:
+                x_int = x_S - y_S * (x_C - x_S) / (y_C - y_S)
+            else:
+                x_int = -1.0 # Force fail if line is parallel
+
+            # If the ray falls outside [0, L], the wave is bending around a corner.
+            if not (-1e-10 <= x_int <= L + 1e-10):
+                tA = d_A_raw + node.distance_to_other_node(node_a)
+                tB = d_B_raw + node.distance_to_other_node(node_b)
+
+                if tA <= tB:
+                    t_1d = tA
+                    new_source = corner_a if corner_a is not None else node_a
                 else:
-                    sq_y_S = max(0.0, sq_y_S) # Clean numerical noise only
-                    key_AB = edge_key(node_a, node_b)
+                    t_1d = tB
+                    new_source = corner_b if corner_b is not None else node_b
 
-                    if key_AB in edge_curvature:
-                        S_dict = edge_curvature[key_AB]
-                        S_local = S_dict - node_a.coords
-                        y_S_test = np.dot(S_local, y_hat)
-                        sign_y_S = np.sign(y_S_test) 
-                        if sign_y_S == 0: sign_y_S = 1.0  
-                    else:
-                        sign_y_S = -np.sign(y_C)
-                        if sign_y_S == 0: sign_y_S = 1.0 
+                if t_1d < dist:
+                    dist = t_1d
+                    best_edge_updates = []
+                    best_node_vs = new_source
+                continue
 
-                    y_S = sign_y_S * np.sqrt(sq_y_S)
-                    t_local = np.sqrt( (x_C-x_S)**2 + (y_C-y_S)**2  )
-                    t_total = t_local + S_a_dist
 
-                if t_total < dist:
-                    dist = t_total
-                    best_node_vs = S_prime
-                    S_global = node_a.coords + x_S * x_hat + y_S * y_hat
-                    best_edge_updates = [
-                        (edge_key(node_a, node), S_global),
-                        (edge_key(node_b, node), S_global)
+            # ====== STEP 5 ---> Determine the distane of C from the source S
+            t_local = np.sqrt( (x_C-x_S)**2 + (y_C-y_S)**2  )
+            # If a virtual source has been used, take that into consideration
+            if S_prime is not None: 
+                t_total = t_local + S_prime.dist
+            else:
+                t_total = t_local
+
+            if t_total < dist:
+                dist = t_total
+
+                # Prepare the virtual source to return
+                best_node_vs = S_prime
+                
+                # Compute the global position of the virtual source S
+                S_global = node_a.coords + x_S * x_hat + y_S * y_hat
+
+                    # ====== STEP 6 ---> Update only locally and leave the update to the FMM algorithm
+                best_edge_updates = [
+                    (edge_key(node_a, node), S_global),
+                    (edge_key(node_b, node), S_global)
                     ]
 
-            else: 
-                #If the two nodes have different virtual sources
-                S_prime_a = corner_a
-                d_A = d_A_raw - S_a_dist 
-                d_B = d_B_raw - S_a_dist 
 
-                x_S = (d_A**2 - d_B**2 + L**2) / (2*L)
-                sq_y_S = d_A**2 - x_S**2
-
-                # FIX: Reject physically impossible updates for Source A
-                if sq_y_S < -1e-10 or d_A < 0.0 or d_B < 0.0:
-                    t_local1 = float('inf')
-                    x_S_a, y_S_a = 0.0, 0.0
-                else:
-                    sq_y_S = max(0.0, sq_y_S)
-                    key_AB = edge_key(node_a, node_b)
-
-                    if key_AB in edge_curvature:
-                        S_dict = edge_curvature[key_AB]
-                        S_local = S_dict - node_a.coords
-                        y_S_test = np.dot(S_local, y_hat)
-                        sign_y_S = np.sign(y_S_test) 
-                        if sign_y_S == 0: sign_y_S = 1.0  
-                    else:
-                        sign_y_S = -np.sign(y_C)
-                        if sign_y_S == 0: sign_y_S = 1.0 
-
-                    y_S_a = sign_y_S * np.sqrt(sq_y_S)
-                    x_S_a = x_S
-                    t_local1 = np.sqrt( (x_C-x_S_a)**2 + (y_C-y_S_a)**2  )
-
-                # SOURCE AS THE SOURCE OF B
-                S_prime_b = corner_b
-                d_A = d_A_raw - S_b_dist
-                d_B = d_B_raw - S_b_dist
-
-                x_S = (d_A**2 - d_B**2 + L**2) / (2*L)
-                sq_y_S = d_A**2 - x_S**2
-
-                # FIX: Reject physically impossible updates for Source B
-                if sq_y_S < -1e-10 or d_A < 0.0 or d_B < 0.0:
-                    t_local2 = float('inf')
-                else:
-                    sq_y_S = max(0.0, sq_y_S)
-                    if key_AB in edge_curvature:
-                        S_dict = edge_curvature[key_AB]
-                        S_local = S_dict - node_a.coords
-                        y_S_test = np.dot(S_local, y_hat)
-                        sign_y_S = np.sign(y_S_test) 
-                        if sign_y_S == 0: sign_y_S = 1.0  
-                    else:
-                        sign_y_S = -np.sign(y_C)
-                        if sign_y_S == 0: sign_y_S = 1.0 
-
-                    y_S = sign_y_S * np.sqrt(sq_y_S)
-                    t_local2 = np.sqrt( (x_C-x_S)**2 + (y_C-y_S)**2  )
-
-                t_total_a = t_local1 + S_a_dist
-                t_total_b = t_local2 + S_b_dist
-
-                if t_total_a <= t_total_b:
-                    if t_total_a < dist:
-                        dist = t_total_a
-                        best_node_vs = S_prime_a
-                        S_global = node_a.coords + x_S_a * x_hat + y_S_a * y_hat
-                        best_edge_updates = [
-                            (edge_key(node_a, node), S_global),
-                            (edge_key(node_b, node), S_global)
-                        ]
-                else:
-                    if t_total_b < dist:
-                        dist = t_total_b
-                        best_node_vs = S_prime_b
-                        S_global = node_a.coords + x_S * x_hat + y_S * y_hat
-                        best_edge_updates = [
-                            (edge_key(node_a, node), S_global),
-                            (edge_key(node_b, node), S_global)
-                        ]
-
+        # ------------------------------------------
+        # CASE 2: Degenerate (Only one node ALIVE)
+        # ------------------------------------------
+        # 1D fallback
+        elif node_a.state == 'ALIVE':
+            t_1d = node_a.dist + node.distance_to_other_node(node_a)
+            if t_1d < dist:
+                dist = t_1d
+                best_edge_updates = []
+                best_node_vs = node_virtual_source.get(node_a.idx)
+ 
+        elif node_b.state == 'ALIVE':
+            t_1d = node_b.dist + node.distance_to_other_node(node_b)
+            if t_1d < dist:
+                dist = t_1d
+                best_edge_updates = []
+                best_node_vs = node_virtual_source.get(node_b.idx)
+    
     return dist, best_edge_updates, best_node_vs
 
 
@@ -446,4 +442,20 @@ def edge_key(node_1, node_2):
     """
     return (min(node_1.idx, node_2.idx), max(node_1.idx, node_2.idx))
 
+"""
+def store_virtual_source(node_1, node_2, S, edge_curvature):
+    It saves the 3D position of the virtual source S for the edge (node_1, node_2).
+    It does not overwrite it if already present
+
+    #! Understand if when we will need to reinitialize the virtual source, we will need to change this code
+
+    key = edge_key(node_1, node_2)
+
+    if key in edge_curvature:
+        return
+    
+    #Update the position of the virtual source S for the edge
+    edge_curvature[key] = S.copy()
+
+"""
 
