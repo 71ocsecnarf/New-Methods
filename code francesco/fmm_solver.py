@@ -97,6 +97,7 @@ def eikonal_sol(node, F=1.0):
             # Computation of the angle theta using the cosine theorem
             #          a^2 = b^2 + c^2 - 2bc cos_theta 
             cos_theta = np.clip((b**2 - c**2 + a**2) / (2*b*c), -1.0, 1.0)
+            #cos_theta = np.clip((b**2 + c**2 - a**2) / (2*b*c), -1.0, 1.0)
             sin_theta = np.sqrt(1 - cos_theta**2)   
             #! Possible error if cos_theta > 1 due to numerical errors, gemini suggest to use max(0, 1-cos_theta^2), i do not think it is useful
 
@@ -113,7 +114,7 @@ def eikonal_sol(node, F=1.0):
                 t_sol = (-B + np.sqrt(Delta)) / (2 *A)
 
                 #! Check that t_sol can be very small
-                if t_sol > 1e-12 and u < t_sol:
+                if t_sol > 1e-12 * (node_a.dist + 1.0) and u <= t_sol + 1e-12*(abs(u)+1.0):
                     cond = b * (t_sol - u) / t_sol
                     if 0 < cond < c:
                         t = t_sol + node_a.dist
@@ -290,8 +291,27 @@ def eikonal_sol_circ(node, node_virtual_source):
             
             # Update of the distance only if it is lower than the previously computed
             if best_local_dist < dist:
-                dist = best_local_dist
-                best_node_vs = best_local_vs
+                ##IMPORTANT CHECK: THE FRONT MUST ALWAYS MOVE FORWARD, THE COMPUTED DISTANCE MUST ALWAYS 
+                # HIGHER THAN THE DISTANCES FROM THE OTHER TWO VERTICES A AND B
+                #    ---> SOMETHING LIKE AN UPWIND CONDITION
+
+                if best_local_dist < node_a.dist or best_local_dist < node_b.dist:
+                    # in this case force a 1D fallback and the node a becomes the new virtual source for C
+                    dist_a = node_a.dist + node.distance_to_other_node(node_a)
+                    dist_b = node_b.dist + node.distance_to_other_node(node_b)
+                    if dist_a <= dist_b:
+                        dist = dist_a
+                        #best_node_vs = node_virtual_source.get(node_a.idx)
+                        best_node_vs = node_a
+                    else:
+                        dist = dist_b
+                        #best_node_vs = node_virtual_source.get(node_b.idx)
+                        best_node_vs = node_b
+                
+                else:
+                    dist = best_local_dist
+                    best_node_vs = best_local_vs
+
 
         # ------------------------------------------
         # CASE 2: Degenerate (Only one node ALIVE)
@@ -302,12 +322,14 @@ def eikonal_sol_circ(node, node_virtual_source):
             if t_1d < dist:
                 dist = t_1d
                 best_node_vs = node_virtual_source.get(node_a.idx)
+                #best_node_vs = node_a
  
         elif node_b.state == 'ALIVE':
             t_1d = node_b.dist + node.distance_to_other_node(node_b)
             if t_1d < dist:
                 dist = t_1d
                 best_node_vs = node_virtual_source.get(node_b.idx)
+                #best_node_vs = node_b
     
     return dist, best_node_vs
 
@@ -318,6 +340,8 @@ def compute_2d_eikonal(node_a, node_b, node_c, d_A_raw, d_B_raw, S_prime):
     Computes the 2D Eikonal solution from a specific virtual source S_prime.
     Returns float('inf') if the upwind condition fails or geometry is degenerate.
     """
+
+    
     # Extract the distances SS'
     if S_prime is None:
         S_prime_dist = 0.0
@@ -354,11 +378,20 @@ def compute_2d_eikonal(node_a, node_b, node_c, d_A_raw, d_B_raw, S_prime):
     x_S = (d_A**2 - d_B**2 + L**2) / (2*L)
     sq_y_S = d_A**2 - x_S**2
 
-    # Avoid Floating Point Errors
-    if sq_y_S < 0.0:
-        sq_y_S = 0.0  
-        # In fact, per construction, sq_y_S >= 0 always
 
+    if S_prime is not None:
+        # Re-project the known 3D position of the virtual source in the local frame
+        S_local = S_prime.coords - node_a.coords
+        y_S_sign = np.dot(S_local, y_hat)
+        sign_y_S = np.sign(y_S_sign) if abs(y_S_sign) > 1e-14 else -np.sign(y_C)
+    else:
+        # If S_prime is None (original source), we assume the source is on the 
+        # opposite side of the vertex C as an initial fallback
+        sign_y_S = -np.sign(y_C)
+        if sign_y_S == 0:
+            sign_y_S = 1.0
+
+    """
     if S_prime is not None:
         # Re-project the known 3D position of the virtual source in the local frame
         S_local = S_prime.coords - node_a.coords
@@ -373,6 +406,11 @@ def compute_2d_eikonal(node_a, node_b, node_c, d_A_raw, d_B_raw, S_prime):
         sign_y_S = -np.sign(y_C)
         if sign_y_S == 0:
             sign_y_S = 1.0 # degenerate case: C exactly on AB
+    """
+    # Per construction, S must always be on the opposite side of the vertex C
+    sign_y_S = -np.sign(y_C)
+    if sign_y_S == 0:
+        sign_y_S = 1.0 # degenerate case: C exactly on AB
     
     # The position of the source S can be finally obtained
     y_S = sign_y_S * np.sqrt(sq_y_S)
@@ -380,7 +418,7 @@ def compute_2d_eikonal(node_a, node_b, node_c, d_A_raw, d_B_raw, S_prime):
     # ====== STEP 4 ---> UPWIND CONDITION (Shadow Zone Detection) ---
     # The line from S(x_S, y_S) to C(x_C, y_C) must pass through the edge AB.
     # Intersect the ray with the local x-axis (y=0).
-    if abs(y_C - y_S) > 1e-12:
+    if abs(y_C - y_S) > 1e-10:
         x_int = x_S - y_S * (x_C - x_S) / (y_C - y_S)
     else:
         x_int = -1.0 # Force fail if line is parallel
@@ -388,7 +426,8 @@ def compute_2d_eikonal(node_a, node_b, node_c, d_A_raw, d_B_raw, S_prime):
     # If the ray falls outside [0, L], the wave is bending around a corner.
     if not (-1e-10 <= x_int <= L + 1e-10):
         return float('inf')
-
+    
+    
     # ====== STEP 5 ---> Determine the distane of C from the source S
     t_local = np.sqrt( (x_C-x_S)**2 + (y_C-y_S)**2  )
     

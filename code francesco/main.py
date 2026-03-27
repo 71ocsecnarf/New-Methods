@@ -13,7 +13,7 @@ import mesh_generation
 # ---- Parameter to modify to change geometry -----
 # =================================================
 
-MESH_TYPE = 'square_surface'  # 'square_surface', 'cylinder' or 'l_shape'
+MESH_TYPE = 'l_shape'  # 'square_surface', 'cylinder' or 'l_shape'
 FMM_TYPE = 'circ'              # 'standard for FMM of 'circ' for higher order FMM
 
 # -------------------------------------------------
