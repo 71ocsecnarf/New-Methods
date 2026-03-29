@@ -256,7 +256,7 @@ def geodesic_lshape(node_coords, source_coords, L=1.0):
     d_direct = np.linalg.norm(node_coords - source_coords)
 
     # Check if the straight segment crosses the missing quadrant boundary
-    if _segment_crosses_missing_quadrant(source_coords, node_coords, L):
+    if segment_crosses_missing_quadrant(source_coords, node_coords, L):
         d_via_corner = (np.linalg.norm(source_coords - corner) +
                         np.linalg.norm(node_coords   - corner))
         # min() is a safety net for points exactly on the corner boundary
@@ -264,7 +264,7 @@ def geodesic_lshape(node_coords, source_coords, L=1.0):
 
     return d_direct
 
-def _segment_crosses_missing_quadrant(S, P, L):
+def segment_crosses_missing_quadrant(S, P, L):
     """
     Check whether the straight segment S->P passes through the missing
     quadrant of the L-shape, i.e. the rectangle (L/2 < x < L, 0 < y < L/2).
@@ -284,7 +284,7 @@ def _segment_crosses_missing_quadrant(S, P, L):
     # --- Check intersection with vertical edge x = L/2, y in [0, L/2] ---
     if abs(dx) > 1e-14:
         t = (L/2 - x_S) / dx          # Parameter t in [0,1] along segment S->P
-        if 0.0 < t < 1.0:
+        if 0.0 < t <= 1.0:            # CHANGED to <= 1.0
             y_int = y_S + t * dy       # y coordinate at the intersection
             if 0.0 <= y_int <= L/2:    # Intersection is on the interior edge
                 # The segment crosses x=L/2 in the lower half
@@ -294,7 +294,7 @@ def _segment_crosses_missing_quadrant(S, P, L):
     # --- Check intersection with horizontal edge y = L/2, x in [L/2, L] ---
     if abs(dy) > 1e-14:
         t = (L/2 - y_S) / dy
-        if 0.0 < t < 1.0:
+        if 0.0 < t <= 1.0:            # CHANGED to <= 1.0
             x_int = x_S + t * dx
             if L/2 <= x_int <= L:      # Intersection is on the interior edge
                 return True

@@ -24,7 +24,7 @@ SOURCE_THETA_DEG = 0    # angle in degrees: 0 = front of cylinder (x=R, y=0)
 SOURCE_Z     = 0.5    # height along the cylinder
 
 # For square_surface: source specified as (x, y)
-SOURCE_XY = np.array([0.2, 0.0])
+SOURCE_XY = np.array([0.5, 0.0])
 
 # -------------------------------------------------
 
