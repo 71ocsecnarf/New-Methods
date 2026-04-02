@@ -130,7 +130,14 @@ def Innit_Origin_Point(target_coords, node_list):
     # (not from the theoretical source) so the FMM starts from a consistent origin
     for neighbor in closest_node.neighbors:
         neighbor.dist  = neighbor.distance_to_other_node(closest_node)
-        neighbor.state = 'TRIAL'
+        neighbor.state = 'ALIVE'
+        #todo innit la premiere couche de trial
+
+    for neighbor in closest_node.neighbors:
+        for n in neighbor.neighbors:
+            if n.state != 'ALIVE':
+                n.dist = n.distance_to_other_node(closest_node)
+                n.state = 'TRIAL'
 
     print(f"Source node {closest_node.node_tag} @ {closest_node.coords}")
     print(f"  Theoretical source : {target_coords}")
@@ -330,7 +337,10 @@ def Plot_Isolines(node_list, element_list):
     plt.clabel(lines, inline=True, fontsize=8)
 
     plt.triplot(x, y, triangles, color='black', alpha=0.1, linewidth=0.5)
+    x_line = np.linspace(0.2, 0.8, 100)
+    y_line = (5/3) * (x_line - 0.2)
 
+    plt.plot(x_line, y_line, 'r--', linewidth=2)
     plt.title("FMM - Plot of the levelsets")
     plt.xlabel("X")
     plt.ylabel("Y")
@@ -514,11 +524,14 @@ def Plot_Error_Field(node_list, element_list, mesh_type, true_source, R=0.5, L=1
         plt.figure(figsize=(8, 6))
         plt.gca().set_aspect('equal')
         
-        cntr = plt.tricontourf(x, y, triangles, errors, levels=40, cmap="inferno")
+        cntr = plt.tricontourf(x, y, triangles, errors, levels=40, cmap="Wistia")
         plt.colorbar(cntr, label="Absolute Error")
         
         plt.triplot(x, y, triangles, color='black', alpha=0.1, linewidth=0.5)
-        
+        x_line = np.linspace(0.2, 0.8, 100)
+        y_line = (5/3) * (x_line - 0.2)
+
+        plt.plot(x_line, y_line, 'r--', linewidth=2)
         plt.title(f"Error Distribution - {mesh_type}")
         plt.xlabel("X")
         plt.ylabel("Y")

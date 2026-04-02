@@ -29,6 +29,8 @@ class NODE:
         #*Attributs for FMM (init here)
         self.dist = float('inf')
         self.state = 'FAR'      #*'FAR', 'TRIAL', ou 'ALIVE'
+        self.IsLastUpdateOned = False
+        self.Source1d = None
 
     def distance_to_other_node(self, other_node):
         return np.linalg.norm(self.coords - other_node.coords)
