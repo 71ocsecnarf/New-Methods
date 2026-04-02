@@ -67,7 +67,7 @@ def main(mesh_type=MESH_TYPE, fmm_type=FMM_TYPE):
         mesh_generation.generate_mesh(N, L, mesh_type, output_path)
 
     elif mesh_type == 'l_shape':
-        N = 20       # number of points along the longest edge
+        N = 10       # number of points along the longest edge
         L = 1.0      # bounding box side length; concave corner is at (L/2, L/2)
         output_path   = os.path.join(current_dir, "l_shape.msh")
         source_coords = make_source_coords(mesh_type)

@@ -277,7 +277,8 @@ def eikonal_sol_circ(node, edge_curvature):
 
             # 2D circular update ---> try with corner_a as a source
             t_2d_a, S_coords_a = compute_2d_eikonal(node_a, node_b, node, d_A_raw, d_B_raw, corner_a, edge_curvature)
-            if t_2d_a <= best_local_dist + 1e-10:
+            #if t_2d_a <= best_local_dist + 1e-10:
+            if t_2d_a <= best_local_dist:
                 best_local_dist = t_2d_a
                 best_local_vs = corner_a
                 best_local_S = S_coords_a
@@ -285,18 +286,21 @@ def eikonal_sol_circ(node, edge_curvature):
             # Attempt 2D Eikonal from corner_b (only if different from corner_a to save computations)
             if corner_a is not corner_b:
                 t_2d_b, S_coords_b = compute_2d_eikonal(node_a, node_b, node, d_A_raw, d_B_raw, corner_b, edge_curvature)
-                if t_2d_b <= best_local_dist + 1e-10:
+                #if t_2d_b <= best_local_dist + 1e-10:
+                if t_2d_b <= best_local_dist:
                     best_local_dist = t_2d_b
                     best_local_vs = corner_b
                     best_local_S = S_coords_b
             
             # Update of the distance only if it is lower than the previously computed
             if best_local_dist < dist:
+                
+        
                 ##IMPORTANT CHECK: THE FRONT MUST ALWAYS MOVE FORWARD, THE COMPUTED DISTANCE MUST ALWAYS 
                 # HIGHER THAN THE DISTANCES FROM THE OTHER TWO VERTICES A AND B
                 #    ---> SOMETHING LIKE AN UPWIND CONDITION
-
-                if best_local_dist < node_a.dist or best_local_dist < node_b.dist:
+                
+                if best_local_dist < node_a.dist-1e-10 or best_local_dist < node_b.dist-1e-10:
                     # in this case force a 1D fallback and the node a becomes the new virtual source for C
                     dist_via_a = node_a.dist + node.distance_to_other_node(node_a)
                     dist_via_b = node_b.dist + node.distance_to_other_node(node_b)
@@ -310,11 +314,40 @@ def eikonal_sol_circ(node, edge_curvature):
                         #best_node_vs = node_b.virtual_source
                         best_node_vs = node_b
                         best_A, best_B, best_S_coords = None, None, None
-                
+
                 else:
+                    # Accept the 2D circular result
                     dist = best_local_dist
                     best_node_vs = best_local_vs
                     best_A, best_B, best_S_coords = node_a, node_b, best_local_S
+
+                """
+                # IMPROVED VERSION: remove the over-aggressive upwind check
+                # Trust the intersection check already done inside compute_2d_eikonal
+                if best_local_dist < dist:
+                    # Only reject if clearly non-causal (use a relative tolerance)
+                    tol = 1e-8 * (node_a.dist + node_b.dist + 1.0)
+                    if best_local_dist < min(node_a.dist, node_b.dist) - tol:
+                         # Genuine non-causal: 1D fallback
+                        dist_via_a = node_a.dist + node.distance_to_other_node(node_a)
+                        dist_via_b = node_b.dist + node.distance_to_other_node(node_b)
+                        if dist_via_a <= dist_via_b:
+                            dist = dist_via_a
+                            #best_node_vs = node_a.virtual_source
+                            best_node_vs = node_a
+                            best_A, best_B, best_S_coords = None, None, None
+                        else:
+                            dist = dist_via_b
+                            #best_node_vs = node_b.virtual_source
+                            best_node_vs = node_b
+                            best_A, best_B, best_S_coords = None, None, None
+                else:
+                    # Accept the 2D circular result
+                    dist = best_local_dist
+                    best_node_vs = best_local_vs
+                    best_A, best_B, best_S_coords = node_a, node_b, best_local_S
+                """
+                
 
 
         # ------------------------------------------
@@ -418,7 +451,8 @@ def compute_2d_eikonal(node_a, node_b, node_c, d_A_raw, d_B_raw, S_prime, edge_c
     # Reconstruct S position in the global 2D coordinates for future edges
     S_global = node_a.coords + x_S*x_hat + y_S*y_hat
 
-
+        
+    """
     # ====== STEP 4 ---> UPWIND CONDITION (Shadow Zone Detection) ---
     # The line from S(x_S, y_S) to C(x_C, y_C) must pass through the edge AB.
     # Intersect the ray with the local x-axis (y=0).
@@ -429,9 +463,9 @@ def compute_2d_eikonal(node_a, node_b, node_c, d_A_raw, d_B_raw, S_prime, edge_c
 
     # If the ray falls outside [0, L], the wave is bending around a corner.
     if not (-1e-12 <= x_int <= L + 1e-12):
-        return float('inf'), None  
-
-    
+        return float('inf'), None
+    """
+       
     # ====== STEP 5 ---> Determine the distane of C from the source S
     t_local = np.sqrt( (x_C-x_S)**2 + (y_C-y_S)**2  )
     

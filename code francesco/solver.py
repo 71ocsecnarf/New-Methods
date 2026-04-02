@@ -225,6 +225,7 @@ def compute_err_l_shape(node_list, source_coord, L=1.0):
             continue
             
         d_exact = geodesic_lshape(node.coords, source_coord, L)
+        #d_exact = np.linalg.norm(node.coords- source_coord)
         err_i = abs(d_exact - node.dist)
         errors.append(err_i)
 
