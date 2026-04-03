@@ -255,6 +255,7 @@ def fmm_algorithm_circ(node_list, source_nodes):
 
                     # Save the date of the edge update and the virtual source temporaneally 
                     # to not update them globally
+                    #is_1d_fallback = False
                     if is_1d_fallback and isOnTheSameLine == False:
                         neighbor.virtual_source = new_node_vs
                         neighbor.IsLastUpdateOned = True
@@ -270,10 +271,11 @@ def fmm_algorithm_circ(node_list, source_nodes):
                     heap_push(neighbor, new_dist)
         #Save_Front_Frame(node_list, frame_id)
         #Save_Debug_Frame(node_list, current_node, node_virtual_source, frame_id)
+        #Save_Debug_Frame_3D(node_list, current_node, node_virtual_source, frame_id, folder="debug_frames_3D")
         frame_id += 1
     #Make_GIF()
     #Make_GIF(folder="debug_frames", gif_name="front_source.gif")
-
+    #Make_GIF(folder="debug_frames_3D", gif_name="cyl_front_source.gif")
 
 
 def eikonal_sol_circ(node, node_virtual_source):
@@ -289,10 +291,10 @@ def eikonal_sol_circ(node, node_virtual_source):
         node_a, node_b = others[0], others[1]
         tA_1d = node_a.dist + node.distance_to_other_node(node_a)
         tB_1d = node_b.dist + node.distance_to_other_node(node_b)
-        t_1d_list.append(tA_1d)
-        t_1d_list.append(tB_1d)
-        node_list.append(node_a)
-        node_list.append(node_b)
+        # t_1d_list.append(tA_1d)
+        # t_1d_list.append(tB_1d)
+        # node_list.append(node_a)
+        # node_list.append(node_b)
     
         # ------------------------------------------
         # CASE 1: Both nodes are ALIVE
@@ -309,22 +311,18 @@ def eikonal_sol_circ(node, node_virtual_source):
             corner_a = node_virtual_source.get(node_a.idx)
             corner_b = node_virtual_source.get(node_b.idx)
             if corner_b is None or corner_a is None:
-                print("is None")
+                print("corner a or b is None")
             # else:
             #     print("Is not None")
-
-            # Compute the 1D update to confront them with the 2D updated distances
-            tA_1d = d_A_raw + node.distance_to_other_node(node_a)
-            tB_1d = d_B_raw + node.distance_to_other_node(node_b)
-
+            best_local_dist = dist 
             # Evaluate which is the minimum of the two
             if tA_1d <= tB_1d:
                 best_local_dist = tA_1d
                 # Update correctly the source
-                best_local_vs = node_a #corner_a if corner_a is not None else node_a
+                best_local_vs = corner_a if corner_a is not None else node_a
             else:
                 best_local_dist = tB_1d
-                best_local_vs = node_b #corner_b if corner_b is not None else node_b
+                best_local_vs = corner_b if corner_b is not None else node_b
 
 
             
@@ -343,11 +341,13 @@ def eikonal_sol_circ(node, node_virtual_source):
                     close_corner = corner_a
                     other_corner = corner_b
                     mynode = node_b #* Left node on my drawing
+                    mynode2 = node_a
                 else:
                     close_corner = corner_b
                     other_corner = corner_a
                     mynode = node_a
-                print(other_corner.coords)
+                    mynode2 = node_b
+                #print(other_corner.coords)
                 x_hat = (close_corner.coords - other_corner.coords) / np.linalg.norm(close_corner.coords - other_corner.coords)
                 # AB = node_b.coords - node_a.coords
                 # AC = node.coords - node_a.coords
@@ -379,13 +379,15 @@ def eikonal_sol_circ(node, node_virtual_source):
                 #     continue  # skip complètement le 2D
 
                 if isCplus:
-                    t_2d_b = compute_2d_eikonal(node_a, node_b, node, d_A_raw, other_corner.dist + np.linalg.norm(other_corner.coords - node_b.coords), other_corner)
+                    #t_2d_b = compute_2d_eikonal(mynode, mynode2, node, mynode.dist, other_corner.dist + np.linalg.norm(other_corner.coords - mynode2.coords), other_corner)
+                    t_2d_b = compute_2d_eikonal(mynode, mynode2, node, mynode.dist, mynode2.dist, other_corner)
                     #t_2d_b = compute_2d_eikonal(node_a, node_b, node, d_A_raw-corner_a.dist, d_B_raw, corner_a)
                     if t_2d_b < best_local_dist:
                         best_local_dist = t_2d_b
                         best_local_vs = other_corner
                 else:
-                    t_2d_b = compute_2d_eikonal(node_a, node_b, node, close_corner.dist +  np.linalg.norm(close_corner.coords - node_a.coords), d_B_raw, close_corner)
+                    #t_2d_b = compute_2d_eikonal(mynode, mynode2, node, close_corner.dist +  np.linalg.norm(close_corner.coords - mynode.coords), mynode2.dist, close_corner)
+                    t_2d_b = compute_2d_eikonal(mynode, mynode2, node, mynode.dist, mynode2.dist, close_corner)
                     #t_2d_b = compute_2d_eikonal(node_a, node_b, node, d_A_raw-corner_a.dist, d_B_raw-corner_b.dist, corner_b)
                     if t_2d_b < best_local_dist:
                         best_local_dist = t_2d_b
@@ -402,6 +404,13 @@ def eikonal_sol_circ(node, node_virtual_source):
                 if t_2d_a < best_local_dist:
                     best_local_dist = t_2d_a
                     best_local_vs = corner_a
+
+                t_2d_b = compute_2d_eikonal(node_a, node_b, node, d_A_raw, d_B_raw, corner_b)
+                if t_2d_b < best_local_dist:
+                    best_local_dist = t_2d_b
+                    best_local_vs = corner_b
+                
+
             # Update of the distance only if it is lower than the previously computed
             if best_local_dist < dist:
                 dist = best_local_dist
@@ -412,8 +421,7 @@ def eikonal_sol_circ(node, node_virtual_source):
         # ------------------------------------------
         # 1D fallback
         elif node_a.state == 'ALIVE':
-            t_1d = node_a.dist + node.distance_to_other_node(node_a)
-                
+            t_1d = tA_1d
             isOnTheSameLine = abs(np.linalg.norm(np.cross(node.coords - node_a.coords , node.coords - node_a.virtual_source.coords))) < 1e-3
             if t_1d < dist:
                 dist = t_1d
@@ -421,7 +429,7 @@ def eikonal_sol_circ(node, node_virtual_source):
                 
  
         elif node_b.state == 'ALIVE':
-            t_1d = node_b.dist + node.distance_to_other_node(node_b)
+            t_1d = tB_1d
                 
             isOnTheSameLine = abs(np.linalg.norm(np.cross(node.coords - node_b.coords , node.coords - node_b.virtual_source.coords))) < 1e-3
             
@@ -429,7 +437,6 @@ def eikonal_sol_circ(node, node_virtual_source):
                 dist = t_1d
                 best_node_vs = node_b if isOnTheSameLine is False else node_b.virtual_source#node_virtual_source.get(node_b.idx)
 
-    
     return dist, best_node_vs, t_1d_list, node_list, isOnTheSameLine
 
 
@@ -508,7 +515,7 @@ def compute_2d_eikonal(node_a, node_b, node_c, d_A_raw, d_B_raw, S_prime):
         x_int = -1.0 # Force fail if line is parallel
 
     # If the ray falls outside [0, L], the wave is bending around a corner.
-    if not (-1e-6 <= x_int <= L + 1e-6):
+    if not (-1e-3 <= x_int <= L + 1e-3):
         return float('inf')
 
     # ====== STEP 5 ---> Determine the distane of C from the source S
@@ -635,6 +642,66 @@ def Save_Debug_Frame(node_list, current_node, node_virtual_source, frame_id, fol
     plt.plot(x_line, y_line, 'r--', linewidth=2)
 
     plt.legend()
+
+    filename = f"{folder}/frame_{frame_id:05d}.png"
+    plt.savefig(filename, dpi=150)
+    plt.close()
+
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+
+def Save_Debug_Frame_3D(node_list, current_node, node_virtual_source, frame_id, folder="debug_frames_3D"):
+    
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+
+    fig = plt.figure(figsize=(6,6))
+    ax = fig.add_subplot(111, projection='3d')
+
+    # --- tous les nodes ---
+    x_all = [n.coords[0] for n in node_list]
+    y_all = [n.coords[1] for n in node_list]
+    z_all = [n.coords[2] for n in node_list]
+    ax.scatter(x_all, y_all, z_all, c="lightgray", s=5)
+
+    # --- nodes ALIVE ---
+    alive_nodes = [n for n in node_list if n.state == "ALIVE"]  # adapte si besoin
+    if alive_nodes:
+        x_alive = [n.coords[0] for n in alive_nodes]
+        y_alive = [n.coords[1] for n in alive_nodes]
+        z_alive = [n.coords[2] for n in alive_nodes]
+        ax.scatter(x_alive, y_alive, z_alive, c="blue", s=10)
+
+    # --- node courant ---
+    ax.scatter(current_node.coords[0],
+               current_node.coords[1],
+               current_node.coords[2],
+               c="gold", s=60, label="Current ALIVE")
+
+    # --- source ---
+    source = node_virtual_source.get(current_node.idx)
+    if source is not None:
+        ax.scatter(source.coords[0],
+                   source.coords[1],
+                   source.coords[2],
+                   c="red", s=60, label="Virtual Source")
+
+    # --- limites ---
+    ax.set_xlim(min(x_all), max(x_all))
+    ax.set_ylim(min(y_all), max(y_all))
+    ax.set_zlim(min(z_all), max(z_all))
+
+    ax.set_box_aspect([
+        max(x_all)-min(x_all),
+        max(y_all)-min(y_all),
+        max(z_all)-min(z_all)
+    ])
+
+    ax.view_init(elev=110, azim=60)
+
+    ax.legend()
 
     filename = f"{folder}/frame_{frame_id:05d}.png"
     plt.savefig(filename, dpi=150)

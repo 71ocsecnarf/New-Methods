@@ -13,7 +13,7 @@ import mesh_generation
 # ---- Parameter to modify to change geometry -----
 # =================================================
 
-MESH_TYPE = 'l_shape'  # 'square_surface', 'cylinder' or 'l_shape'
+MESH_TYPE = 'cylinder'  # 'square_surface', 'cylinder' or 'l_shape'
 FMM_TYPE = 'circ'              # 'standard for FMM of 'circ' for higher order FMM
 
 # -------------------------------------------------
@@ -67,7 +67,7 @@ def main(mesh_type=MESH_TYPE, fmm_type=FMM_TYPE):
         mesh_generation.generate_mesh(N, L, mesh_type, output_path)
 
     elif mesh_type == 'l_shape':
-        N = 30       # number of points along the longest edge
+        N = 20       # number of points along the longest edge
         L = 1.0      # bounding box side length; concave corner is at (L/2, L/2)
         output_path   = os.path.join(current_dir, "l_shape.msh")
         source_coords = make_source_coords(mesh_type)
