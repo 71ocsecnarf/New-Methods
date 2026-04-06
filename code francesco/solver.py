@@ -130,14 +130,14 @@ def Innit_Origin_Point(target_coords, node_list):
     # (not from the theoretical source) so the FMM starts from a consistent origin
     for neighbor in closest_node.neighbors:
         neighbor.dist  = neighbor.distance_to_other_node(closest_node)
-        neighbor.state = 'ALIVE'
+        neighbor.state = 'TRIAL'
         #todo innit la premiere couche de trial
 
-    for neighbor in closest_node.neighbors:
-        for n in neighbor.neighbors:
-            if n.state != 'ALIVE':
-                n.dist = n.distance_to_other_node(closest_node)
-                n.state = 'TRIAL'
+    # for neighbor in closest_node.neighbors:
+    #     for n in neighbor.neighbors:
+    #         if n.state != 'ALIVE':
+    #             n.dist = n.distance_to_other_node(closest_node)
+    #             n.state = 'TRIAL'
 
     print(f"Source node {closest_node.node_tag} @ {closest_node.coords}")
     print(f"  Theoretical source : {target_coords}")
@@ -206,7 +206,7 @@ def compute_err_cylinder(node_list, true_source, R):
         theta   = np.arctan2(y, x)
         d_theta = (theta - theta0 + np.pi) % (2 * np.pi) - np.pi
         d_exact = np.sqrt((R_source * d_theta)**2 + (z - z0)**2)
-        err     = abs(node.dist - d_exact)
+        err     = node.dist - d_exact
         errors.append(err)
         
         max_err = max(max_err, err)

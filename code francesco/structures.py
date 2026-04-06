@@ -10,6 +10,23 @@ class ELEMENT:
         #*               A         B         C
         self.nodes  = [nodes[0], nodes[1], nodes[2]] 
         self.IsObtuse = False
+    def compute_outward_normal(self):
+        """
+        Calcule la normale extérieure au plan du triangle (3D).
+        Convention : produit vectoriel AB x AC, orienté côté extérieur (CCW vu de l'extérieur).
+        """
+        A = self.nodes[0].coords
+        B = self.nodes[1].coords
+        C = self.nodes[2].coords
+
+        AB = B - A
+        AC = C - A
+
+        normal = np.cross(AB, AC)
+        normal /= np.linalg.norm(normal)   # normalisation
+
+        self.normal = normal
+        return normal
 
 class NODE:
     def  __init__(self, coords, node_tag, idx):

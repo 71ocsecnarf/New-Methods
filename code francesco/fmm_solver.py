@@ -185,9 +185,9 @@ def fmm_algorithm_circ(node_list, source_nodes):
             node.virtual_source = source_nodes[0]
             node_virtual_source[node.idx] = node.virtual_source
             heap_push(node, node.dist)
-        if node.state == 'ALIVE' and node is not source_nodes:
-            node.virtual_source = source_nodes[0]
-            node_virtual_source[node.idx] = node.virtual_source
+        # if node.state == 'ALIVE' and node is not source_nodes:
+        #     node.virtual_source = source_nodes[0]
+        #     node_virtual_source[node.idx] = node.virtual_source
 
             
 
@@ -202,8 +202,8 @@ def fmm_algorithm_circ(node_list, source_nodes):
             continue
         
         # Check if the extracted distance is still the lowest one -> discard futiles duplicates
-        if d_min > best_dist_in_heap.get(current_node.idx, float('inf')):
-            continue   
+        # if d_min > best_dist_in_heap.get(current_node.idx, float('inf')):
+        #     continue   
 
         # Point 2 -> set the minimum distance node as ALIVE 
         current_node.state = 'ALIVE'
@@ -222,8 +222,6 @@ def fmm_algorithm_circ(node_list, source_nodes):
                     node_virtual_source[current_node.idx] = current_node.Source1d
                 else:
                     node_virtual_source[current_node.idx] = current_node.virtual_source
-            else:
-                node_virtual_source.pop(current_node.idx, None)
 
 
 
@@ -236,7 +234,7 @@ def fmm_algorithm_circ(node_list, source_nodes):
 
                 # Now the function eikonal_sol_circ does not alter the global state, update
                 # only when the node becomes ALIVE.
-                new_dist, node_vs, t_1d_list, node_list_v2, isOnTheSameLine = eikonal_sol_circ(neighbor, node_virtual_source)
+                new_dist, node_vs, is_1d_fallback, isOnTheSameLine, t_1d_list, node_1d_list = eikonal_sol_circ(neighbor, node_virtual_source)
                 new_node_vs = node_vs
 
                 
@@ -246,28 +244,14 @@ def fmm_algorithm_circ(node_list, source_nodes):
                 # (always true if the node was FAR)
                 if new_dist < old_dist:
                     neighbor.dist = new_dist
-                    if new_dist in t_1d_list:
-                        is_1d_fallback = True
-                        idx = t_1d_list.index(new_dist)
-                        new_node_vs = node_list_v2[idx]
-                    else:
-                        is_1d_fallback = False
-
-                    # Save the date of the edge update and the virtual source temporaneally 
-                    # to not update them globally
-                    #is_1d_fallback = False
-                    if is_1d_fallback and isOnTheSameLine == False:
-                        neighbor.virtual_source = new_node_vs
+                    if is_1d_fallback and not isOnTheSameLine:
                         neighbor.IsLastUpdateOned = True
-                        if current_node.IsLastUpdateOned == True:
-                            neighbor.Source1d = current_node.Source1d
-                        else:
-                            neighbor.Source1d = new_node_vs
-                    else:
+                        neighbor.Source1d = node_vs
                         neighbor.virtual_source = node_vs
+                    else:
                         neighbor.IsLastUpdateOned = False
-                        
-                    neighbor.state = 'TRIAL' # Set the node status as TRIAL, in case it was FAR
+                        neighbor.virtual_source = node_vs
+                    neighbor.state = 'TRIAL'
                     heap_push(neighbor, new_dist)
         #Save_Front_Frame(node_list, frame_id)
         #Save_Debug_Frame(node_list, current_node, node_virtual_source, frame_id)
@@ -279,22 +263,25 @@ def fmm_algorithm_circ(node_list, source_nodes):
 
 
 def eikonal_sol_circ(node, node_virtual_source):
-    
+    samelinetol = 1e-1
     dist = float('inf')  # Distance Initialization
     best_node_vs = None
     isOnTheSameLine = False
+    is_1d_fallback = False
     #is_1d_fallback = False
     t_1d_list = []
     node_list = []
     for tri in node.adjacent_triangles: # Compute all the distance from all adjactens triangles
         others = [n for n in tri.nodes if n.node_tag != node.node_tag]
         node_a, node_b = others[0], others[1]
+        
+        normal = tri.compute_outward_normal()
         tA_1d = node_a.dist + node.distance_to_other_node(node_a)
         tB_1d = node_b.dist + node.distance_to_other_node(node_b)
-        # t_1d_list.append(tA_1d)
-        # t_1d_list.append(tB_1d)
-        # node_list.append(node_a)
-        # node_list.append(node_b)
+        t_1d_list.append(tA_1d)
+        t_1d_list.append(tB_1d)
+        node_list.append(node_a)
+        node_list.append(node_b)
     
         # ------------------------------------------
         # CASE 1: Both nodes are ALIVE
@@ -303,7 +290,8 @@ def eikonal_sol_circ(node, node_virtual_source):
             
             if node_a.dist > node_b.dist: # d(A) < d(B) as a convention
                 node_a, node_b = node_b, node_a
-
+            tA_1d = node_a.dist + node.distance_to_other_node(node_a)
+            tB_1d = node_b.dist + node.distance_to_other_node(node_b)
             d_A_raw = node_a.dist
             d_B_raw = node_b.dist
 
@@ -316,13 +304,42 @@ def eikonal_sol_circ(node, node_virtual_source):
             #     print("Is not None")
             best_local_dist = dist 
             # Evaluate which is the minimum of the two
-            if tA_1d <= tB_1d:
+            if tA_1d <= tB_1d and tA_1d < best_local_dist:
                 best_local_dist = tA_1d
+                #isOnTheSameLine = abs(np.linalg.norm(np.cross((node.coords - node_a.coords), (node.coords - node_a.virtual_source.coords) - np.dot((node.coords - node_a.virtual_source.coords), normal)*normal))) < 1e-3
+                
+                v1 = node.coords - node_a.coords
+                v2 = (node.coords - node_a.virtual_source.coords)
+                v2 = v2 - np.dot(v2, normal) * normal
+                
+                n1 = np.linalg.norm(v1)
+                n2 = np.linalg.norm(v2)
+                
+                if n1 > 1e-14 and n2 > 1e-14:
+                    isOnTheSameLine = np.linalg.norm(np.cross(v1/n1, v2/n2)) < samelinetol
+                else:
+                    isOnTheSameLine = True
+
+                is_1d_fallback = True
                 # Update correctly the source
-                best_local_vs = corner_a if corner_a is not None else node_a
-            else:
+                best_local_vs =  node_a if isOnTheSameLine == False else node_virtual_source.get(node_a.idx)
+
+            elif tB_1d < tA_1d and tB_1d < best_local_dist:
                 best_local_dist = tB_1d
-                best_local_vs = corner_b if corner_b is not None else node_b
+                #isOnTheSameLine = abs(np.linalg.norm(np.cross((node.coords - node_b.coords), (node.coords - node_b.virtual_source.coords) - np.dot((node.coords - node_b.virtual_source.coords), normal)*normal))) < 1e-3
+                v1 = node.coords - node_b.coords
+                v2 = (node.coords - node_b.virtual_source.coords)
+                v2 = v2 - np.dot(v2, normal) * normal
+                
+                n1 = np.linalg.norm(v1)
+                n2 = np.linalg.norm(v2)
+                
+                if n1 > 1e-14 and n2 > 1e-14:
+                    isOnTheSameLine = np.linalg.norm(np.cross(v1/n1, v2/n2)) < samelinetol
+                else:
+                    isOnTheSameLine = True
+                best_local_vs  =  node_b if isOnTheSameLine == False else node_virtual_source.get(node_b.idx)
+                is_1d_fallback = True
 
 
             
@@ -331,37 +348,63 @@ def eikonal_sol_circ(node, node_virtual_source):
 
             # Attempt 2D Eikonal from corner_b (only if different from corner_a to save computations)
             if corner_a is not corner_b:#Todo here?
+                #print("not the same corner")
                 #TODO======================================================|
                 #TODO======================================================V
                 #*d(A) < d(B) so corner_b is closer to C
                 #*Get closest corner
-                d_to_corner_b = np.linalg.norm(corner_b.coords - node.coords)
-                d_to_corner_a = np.linalg.norm(corner_a.coords - node.coords)
-                if d_to_corner_a < d_to_corner_b:
+                # d_to_corner_b = np.linalg.norm(corner_b.coords - node.coords)
+                # d_to_corner_a = np.linalg.norm(corner_a.coords - node.coords)
+                # if d_to_corner_a < d_to_corner_b:
+                #     close_corner = corner_a
+                #     other_corner = corner_b
+                #     mynode = node_b #* Left node on my drawing
+                #     mynode2 = node_a
+                # else:
+                #     close_corner = corner_b
+                #     other_corner = corner_a
+                #     mynode = node_a
+                #     mynode2 = node_b
+                #print(other_corner.coords)
+                if corner_b.dist < corner_a.dist:
                     close_corner = corner_a
                     other_corner = corner_b
-                    mynode = node_b #* Left node on my drawing
-                    mynode2 = node_a
+                    mynode = node_b
+                    mynode2 = node_a 
                 else:
                     close_corner = corner_b
                     other_corner = corner_a
                     mynode = node_a
                     mynode2 = node_b
-                #print(other_corner.coords)
+
                 x_hat = (close_corner.coords - other_corner.coords) / np.linalg.norm(close_corner.coords - other_corner.coords)
+                
                 # AB = node_b.coords - node_a.coords
                 # AC = node.coords - node_a.coords
                 # normal = np.cross(AB, AC)
-                normal = np.array([0,0,1])
+                # normal = np.array([0,0,1])
+                
+                x_hat = x_hat - np.dot(x_hat, normal) * normal
+                x_hat = x_hat / np.linalg.norm(x_hat)
+
                 y_hat = np.cross(normal, x_hat)#node_a.coords - np.dot(x_hat, node_a.coords - other_corner.coords) * x_hat
                 y_hat = y_hat / np.linalg.norm(y_hat)
                 #*Check if C is either C+ or C-
-                if np.dot(node.coords - other_corner.coords, y_hat) >= 0 and np.dot(mynode.coords - other_corner.coords, y_hat)>0:
+                if np.dot((node.coords - other_corner.coords) - np.dot((node.coords - other_corner.coords), normal) * normal, y_hat) >= 0 and np.dot((mynode.coords - other_corner.coords) - np.dot((mynode.coords - other_corner.coords), normal) * normal, y_hat)>0:
                     isCplus = True
                 else:
                     isCplus = False
+                v1 = (node.coords - other_corner.coords) - np.dot((node.coords - other_corner.coords), normal) * normal
+                v2 = x_hat
+                n1 = np.linalg.norm(v1)
+                n2 = np.linalg.norm(v2)
+                
+                if n1 > 1e-14 and n2 > 1e-14:
+                    isOnTheSameLine = np.linalg.norm(np.cross(v1/n1, v2/n2)) < samelinetol
+                else:
+                    isOnTheSameLine = True
 
-                isOnTheSameLine = abs(np.linalg.norm(np.cross(node.coords - other_corner.coords,close_corner.coords - other_corner.coords))) < 1e-3
+                #isOnTheSameLine = abs(np.linalg.norm(np.cross((node.coords - other_corner.coords) - np.dot((node.coords - other_corner.coords), normal) * normal, x_hat))) < 1e-3
                 #if isOnTheSameLine: print(node.coords)
                 # if isOnTheSameLine:
                 #     # Force 1D update → pas de nouvelle source
@@ -377,6 +420,16 @@ def eikonal_sol_circ(node, node_virtual_source):
                 #         best_node_vs = best_local_vs
 
                 #     continue  # skip complètement le 2D
+                # t_2d_a = compute_2d_eikonal(node_a, node_b, node, node_a.dist, node_b.dist, corner_a)
+                # t_2d_b = compute_2d_eikonal(node_a, node_b, node, node_a.dist, node_b.dist, corner_b)
+                # if t_2d_a < t_2d_b:
+                #     if t_2d_a < best_local_dist:
+                #         best_local_dist = t_2d_a
+                #         best_local_vs = corner_a
+                # else:
+                #     if t_2d_b < best_local_dist:
+                #         best_local_dist = t_2d_b
+                #         best_local_vs = corner_b
 
                 if isCplus:
                     #t_2d_b = compute_2d_eikonal(mynode, mynode2, node, mynode.dist, other_corner.dist + np.linalg.norm(other_corner.coords - mynode2.coords), other_corner)
@@ -385,6 +438,7 @@ def eikonal_sol_circ(node, node_virtual_source):
                     if t_2d_b < best_local_dist:
                         best_local_dist = t_2d_b
                         best_local_vs = other_corner
+                        is_1d_fallback = False
                 else:
                     #t_2d_b = compute_2d_eikonal(mynode, mynode2, node, close_corner.dist +  np.linalg.norm(close_corner.coords - mynode.coords), mynode2.dist, close_corner)
                     t_2d_b = compute_2d_eikonal(mynode, mynode2, node, mynode.dist, mynode2.dist, close_corner)
@@ -392,6 +446,7 @@ def eikonal_sol_circ(node, node_virtual_source):
                     if t_2d_b < best_local_dist:
                         best_local_dist = t_2d_b
                         best_local_vs = close_corner
+                        is_1d_fallback = False
                 #print(y_hat)
                 #TODO======================================================^
                 #TODO======================================================|
@@ -404,11 +459,16 @@ def eikonal_sol_circ(node, node_virtual_source):
                 if t_2d_a < best_local_dist:
                     best_local_dist = t_2d_a
                     best_local_vs = corner_a
+                    is_1d_fallback = False
+                    isOnTheSameLine = True
+                    
 
                 t_2d_b = compute_2d_eikonal(node_a, node_b, node, d_A_raw, d_B_raw, corner_b)
                 if t_2d_b < best_local_dist:
                     best_local_dist = t_2d_b
                     best_local_vs = corner_b
+                    is_1d_fallback = False
+                    isOnTheSameLine = True
                 
 
             # Update of the distance only if it is lower than the previously computed
@@ -421,23 +481,47 @@ def eikonal_sol_circ(node, node_virtual_source):
         # ------------------------------------------
         # 1D fallback
         elif node_a.state == 'ALIVE':
-            t_1d = tA_1d
-            isOnTheSameLine = abs(np.linalg.norm(np.cross(node.coords - node_a.coords , node.coords - node_a.virtual_source.coords))) < 1e-3
-            if t_1d < dist:
-                dist = t_1d
-                best_node_vs = node_a if isOnTheSameLine is False else node_a.virtual_source#node_virtual_source.get(node_a.idx)
+            tA_1d = node_a.dist + node.distance_to_other_node(node_a)
+            if tA_1d < dist:
+                dist = tA_1d
+                is_1d_fallback = True
                 
+                v1 = node.coords - node_a.coords
+                v2 = (node.coords - node_a.virtual_source.coords)
+                v2 = v2 - np.dot(v2, normal) * normal
+                
+                n1 = np.linalg.norm(v1)
+                n2 = np.linalg.norm(v2)
+                
+                if n1 > 1e-14 and n2 > 1e-14:
+                    isOnTheSameLine = np.linalg.norm(np.cross(v1/n1, v2/n2)) < samelinetol
+                else:
+                    isOnTheSameLine = True
+                    
+                best_node_vs = node_virtual_source.get(node_a.idx) if isOnTheSameLine else node_a       
  
         elif node_b.state == 'ALIVE':
-            t_1d = tB_1d
+            tB_1d = node_b.dist + node.distance_to_other_node(node_b)
+            if tA_1d < dist:
+                dist = tB_1d
+                is_1d_fallback = True
                 
-            isOnTheSameLine = abs(np.linalg.norm(np.cross(node.coords - node_b.coords , node.coords - node_b.virtual_source.coords))) < 1e-3
-            
-            if t_1d < dist:
-                dist = t_1d
-                best_node_vs = node_b if isOnTheSameLine is False else node_b.virtual_source#node_virtual_source.get(node_b.idx)
+                v1 = node.coords - node_b.coords
+                v2 = (node.coords - node_b.virtual_source.coords)
+                v2 = v2 - np.dot(v2, normal) * normal
+                
+                n1 = np.linalg.norm(v1)
+                n2 = np.linalg.norm(v2)
+                
+                if n1 > 1e-14 and n2 > 1e-14:
+                    isOnTheSameLine = np.linalg.norm(np.cross(v1/n1, v2/n2)) < samelinetol
+                else:
+                    isOnTheSameLine = True
+                    
+                best_node_vs = node_virtual_source.get(node_b.idx) if isOnTheSameLine else node_b 
 
-    return dist, best_node_vs, t_1d_list, node_list, isOnTheSameLine
+    # if node.coords[0] == -0.5 and node.coords[2] == 1: print(dist) 
+    return dist, best_node_vs, is_1d_fallback, isOnTheSameLine, t_1d_list, node_list
 
 
 # ========== Helper Functions ============
@@ -449,6 +533,7 @@ def compute_2d_eikonal(node_a, node_b, node_c, d_A_raw, d_B_raw, S_prime):
     # Extract the distances SS'
     if S_prime is None:
         S_prime_dist = 0.0
+        print("None")
         
     else:
         S_prime_dist = S_prime.dist
@@ -462,7 +547,7 @@ def compute_2d_eikonal(node_a, node_b, node_c, d_A_raw, d_B_raw, S_prime):
     normal = np.cross(AB, AC)
     
     # Avoid all degenerate cases: three collinear points...
-    if np.linalg.norm(normal) < 1e-14:
+    if np.linalg.norm(normal) / (np.linalg.norm(AB) * np.linalg.norm(AC)) < 1e-14:
         return float('inf') 
 
     normal = normal / np.linalg.norm(normal)
@@ -485,17 +570,12 @@ def compute_2d_eikonal(node_a, node_b, node_c, d_A_raw, d_B_raw, S_prime):
 
     # Avoid Floating Point Errors
     if sq_y_S < 0.0:
-        sq_y_S = 0.0  
-        # In fact, per construction, sq_y_S >= 0 always
+        return float('inf')
 
     if S_prime is not None:
-        # Re-project the known 3D position of the virtual source in the local frame
-        S_local = S_prime.coords - node_a.coords
-        y_S_test = np.dot(S_local, y_hat)
-        sign_y_S = np.sign(y_S_test) 
-
+        sign_y_S = -np.sign(y_C)
         if sign_y_S == 0:
-            sign_y_S = 1.0  # degenerate case
+            sign_y_S = 1.0
     else:
         #! If S_prime is None (original source), we assume the source is on the 
         # opposite side of the vertex C as an initial fallback
@@ -515,7 +595,7 @@ def compute_2d_eikonal(node_a, node_b, node_c, d_A_raw, d_B_raw, S_prime):
         x_int = -1.0 # Force fail if line is parallel
 
     # If the ray falls outside [0, L], the wave is bending around a corner.
-    if not (-1e-3 <= x_int <= L + 1e-3):
+    if not (-1e-10 <= x_int <= L + 1e-10):
         return float('inf')
 
     # ====== STEP 5 ---> Determine the distane of C from the source S
