@@ -218,10 +218,11 @@ def fmm_algorithm_circ(node_list, source_nodes):
         #           ALIVE, i.e. when the minimum distance has been computed. 
         if hasattr(current_node, 'virtual_source'):
             if current_node.virtual_source is not None:
-                if current_node.IsLastUpdateOned:
-                    node_virtual_source[current_node.idx] = current_node.Source1d
-                else:
-                    node_virtual_source[current_node.idx] = current_node.virtual_source
+                node_virtual_source[current_node.idx] = current_node.virtual_source
+                # if current_node.IsLastUpdateOned:
+                #     node_virtual_source[current_node.idx] = current_node.Source1d
+                # else:
+                #     node_virtual_source[current_node.idx] = current_node.virtual_source
 
 
 
