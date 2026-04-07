@@ -499,7 +499,9 @@ def eikonal_sol_circ(node, node_virtual_source):
                 else:
                     isOnTheSameLine = True
                     
-                best_node_vs = node_virtual_source.get(node_a.idx) if isOnTheSameLine else node_a       
+                best_node_vs = node_virtual_source.get(node_a.idx) if isOnTheSameLine else node_a  
+                # if node.virtual_source == node_virtual_source.get(node_a.idx):
+                #     best_local_vs = node_virtual_source.get(node_a.idx)  
  
         elif node_b.state == 'ALIVE':
             tB_1d = node_b.dist + node.distance_to_other_node(node_b)
@@ -520,6 +522,8 @@ def eikonal_sol_circ(node, node_virtual_source):
                     isOnTheSameLine = True
                     
                 best_node_vs = node_virtual_source.get(node_b.idx) if isOnTheSameLine else node_b 
+                # if node.virtual_source == node_virtual_source.get(node_b.idx):
+                #     best_local_vs = node_virtual_source.get(node_b.idx)  
 
     # if node.coords[0] == -0.5 and node.coords[2] == 1: print(dist) 
     return dist, best_node_vs, is_1d_fallback, isOnTheSameLine, t_1d_list, node_list

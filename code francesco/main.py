@@ -81,9 +81,9 @@ def main(mesh_type=MESH_TYPE, fmm_type=FMM_TYPE):
         H = 1.0
         output_path   = os.path.join(current_dir, "cylinder_surface.msh")
         source_coords = make_source_coords(mesh_type, R=R, H=H)
-        mesh_generation.generate_cylinder_mesh(N, R, H, current_dir)
+        mesh_generation.generate_cylinder_meshV2(N, R, H, current_dir)
     elif mesh_type == 'hole':
-        N = 50
+        N = 100
         L = 1
         R = 0.2
 

@@ -48,6 +48,7 @@ class NODE:
         self.state = 'FAR'      #*'FAR', 'TRIAL', ou 'ALIVE'
         self.IsLastUpdateOned = False
         self.Source1d = None
+        self.virtual_source = None
 
     def distance_to_other_node(self, other_node):
         return np.linalg.norm(self.coords - other_node.coords)
