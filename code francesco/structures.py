@@ -11,6 +11,24 @@ class ELEMENT:
         self.nodes  = [nodes[0], nodes[1], nodes[2]] 
         self.IsObtuse = False
 
+    def compute_outward_normal(self):
+        """
+        Compute the outward normal of the triangle (3D).
+        Convention : cross product AB x AC, oriented on the exterior side (CCW viewed from the outside).
+        """
+        A = self.nodes[0].coords
+        B = self.nodes[1].coords
+        C = self.nodes[2].coords
+
+        AB = B - A
+        AC = C - A
+
+        normal = np.cross(AB, AC)
+        normal /= np.linalg.norm(normal)   # normalisation
+
+        self.normal = normal
+        return normal
+
 class NODE:
     def  __init__(self, coords, node_tag, idx):
         self.coords   = coords

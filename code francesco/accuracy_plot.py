@@ -14,7 +14,7 @@ import mesh_generation
 # ============================================================
 
 MESH_TYPE = 'l_shape'   # 'square_surface','l_shape' or 'cylinder'
-N_VALUES  = [5 * 2**i for i in range(6)]
+N_VALUES  = [5 * 2**i for i in range(7)]
 
 # For cylinder: source specified as (theta_deg, z) in the unrolled domain
 # theta_deg in [-90, +90],  z in [0, H]
@@ -22,7 +22,7 @@ SOURCE_THETA_DEG = 90    # angle in degrees: 0 = front of cylinder (x=R, y=0)
 SOURCE_Z         = 0.1   # height along the cylinder
 
 # For square_surface: source specified as (x, y)
-SOURCE_XY = np.array([0., 0.1])
+SOURCE_XY = np.array([0., 0.])
 
 # ------------------------------------------------------------
 

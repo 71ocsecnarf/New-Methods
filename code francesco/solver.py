@@ -211,75 +211,95 @@ def compute_err_cylinder(node_list, true_source, R):
     return max_err, np.array(errors), l2_err
 
 
-def compute_exact_geodesic_lshape(source_coords, target_coords, L=1.0):
-    """
-    Calcola la distanza geodesica esatta tra una sorgente e un target sulla mesh L-shape.
-    Gestisce in modo rigoroso l'attraversamento della zona d'ombra tramite parametrizzazione.
-    """
-    S = np.array(source_coords)
-    P = np.array(target_coords)
-    C = np.array([L/2.0, L/2.0, 0.0])  # Angolo concavo (Shadow corner) in 3D
-    
-    dist_straight = np.linalg.norm(P - S)
-    blocked = False
-    
-    # Test parametrico rigoroso: il segmento S->P entra nel gap (x > L/2, y < L/2)?
-    # Cerchiamo se il segmento incrocia le estensioni dei bordi interni
-    
-    if S[0] != P[0]:
-        # Trova il parametro t dove la x del segmento vale L/2
-        t_x = (L/2.0 - S[0]) / (P[0] - S[0])
-        if 0 < t_x < 1: 
-            # Se l'intersezione avviene nel mezzo del segmento, calcola la y
-            y_at_tx = S[1] + t_x * (P[1] - S[1])
-            if y_at_tx < L/2.0 - 1e-12: # Passa sotto lo spigolo
-                blocked = True
-                
-    if S[1] != P[1] and not blocked:
-        # Trova il parametro t dove la y del segmento vale L/2
-        t_y = (L/2.0 - S[1]) / (P[1] - S[1])
-        if 0 < t_y < 1: 
-            # Se l'intersezione avviene nel mezzo del segmento, calcola la x
-            x_at_ty = S[0] + t_y * (P[0] - S[0])
-            if x_at_ty > L/2.0 + 1e-12: # Passa a destra dello spigolo
-                blocked = True
-                
-    if blocked:
-        # Se bloccato, la via più breve è piegarsi attorno allo spigolo C
-        return np.linalg.norm(S - C) + np.linalg.norm(P - C)
-    else:
-        # Nessun ostacolo superato, distanza in linea retta
-        return dist_straight
-
-
 def compute_err_l_shape(node_list, source_coord, L=1.0):
     """
-    Compute max, relative, pointwise, and L2 errors for the L-Shape geometry.
+    Compute geodesic errors for the L-shape geometry.
     Returns: (max_error, max_relative_error, pointwise_errors_array, L2_error)
     """
-    errors = []
-    errors_rel = []
+    errors     = []  
+    errors_rel = []  
 
     for node in node_list:
-        # Mantiene la sicurezza per i nodi irraggiungibili (come in compute_err)
         if node.dist == float('inf'):
-            errors.append(0.0)  
+            errors.append(0.0)
             continue
             
-        ex_dist = compute_exact_geodesic_lshape(source_coord, node.coords, L)
-        #ex_dist = np.linalg.norm(source_coord - node.coords)
-        
-        err_i = abs(ex_dist - node.dist)
+        d_exact = geodesic_lshape(node.coords, source_coord, L)
+        err_i = abs(d_exact - node.dist)
         errors.append(err_i)
-        
-        if ex_dist > 1e-14:
-            errors_rel.append(err_i / ex_dist)
 
-    err = np.max(errors) if errors else 0.0
+        if d_exact > 1e-14:
+            errors_rel.append(err_i / d_exact)
+
+    err     = np.max(errors) if errors else 0.0
     err_rel = np.max(errors_rel) if errors_rel else 0.0
-    e_l2 = np.sqrt(np.mean(np.array(errors)**2)) if errors else 0.0
+    e_l2    = np.sqrt(np.mean(np.array(errors) ** 2)) if errors else 0.0 
 
     return err, err_rel, np.array(errors), e_l2
+
+def geodesic_lshape(node_coords, source_coords, L=1.0):
+    """
+    Exact geodesic distance on the L-shape domain.
+
+    The missing quadrant is (x > L/2, y < L/2).
+    The concave corner is at C = (L/2, L/2).
+
+    If the straight line S->P crosses the boundary of the missing quadrant,
+    the geodesic must detour through the corner C:
+        d = dist(S, C) + dist(C, P)
+
+    Otherwise the Euclidean distance is exact.
+    """
+    corner = np.array([L / 2.0, L / 2.0, 0.0])
+
+    # Direct Euclidean distance
+    d_direct = np.linalg.norm(node_coords - source_coords)
+
+    # Check if the straight segment crosses the missing quadrant boundary
+    if segment_crosses_missing_quadrant(source_coords, node_coords, L):
+        d_via_corner = (np.linalg.norm(source_coords - corner) +
+                        np.linalg.norm(node_coords   - corner))
+        # min() is a safety net for points exactly on the corner boundary
+        return d_via_corner
+
+    return d_direct
+
+def segment_crosses_missing_quadrant(S, P, L):
+    """
+    Check whether the straight segment S->P passes through the missing
+    quadrant of the L-shape, i.e. the rectangle (L/2 < x < L, 0 < y < L/2).
+
+    Strategy: check if the segment crosses either of the two boundary edges
+    of the missing quadrant that are interior to the bounding box:
+      - Vertical edge  : x = L/2,  y in [0,   L/2]
+      - Horizontal edge: y = L/2,  x in [L/2, L  ]
+
+    If it crosses one of them going INTO the missing quadrant, return True.
+    """
+    x_S, y_S = S[0], S[1]
+    x_P, y_P = P[0], P[1]
+    dx = x_P - x_S
+    dy = y_P - y_S
+
+    # --- Check intersection with vertical edge x = L/2, y in [0, L/2] ---
+    if abs(dx) > 1e-14:
+        t = (L/2 - x_S) / dx          # Parameter t in [0,1] along segment S->P
+        if 0.0 < t < 1.0:
+            y_int = y_S + t * dy       # y coordinate at the intersection
+            if 0.0 <= y_int <= L/2:    # Intersection is on the interior edge
+                # The segment crosses x=L/2 in the lower half
+                # --> it is entering or exiting the missing quadrant
+                return True
+
+    # --- Check intersection with horizontal edge y = L/2, x in [L/2, L] ---
+    if abs(dy) > 1e-14:
+        t = (L/2 - y_S) / dy
+        if 0.0 < t < 1.0:
+            x_int = x_S + t * dx
+            if L/2 <= x_int <= L:      # Intersection is on the interior edge
+                return True
+
+    return False
 
 # =============================================
 # ------------------- Plots -------------------
@@ -308,7 +328,10 @@ def Plot_Isolines(node_list, element_list):
     plt.clabel(lines, inline=True, fontsize=8)
 
     plt.triplot(x, y, triangles, color='black', alpha=0.1, linewidth=0.5)
+    x_line = np.linspace(0.2, 0.8, 100)
+    y_line = (5/3) * (x_line - 0.2)
 
+    plt.plot(x_line, y_line, 'r--', linewidth=2)
     plt.title("FMM - Plot of the levelsets")
     plt.xlabel("X")
     plt.ylabel("Y")
@@ -455,7 +478,7 @@ def Plot_Error_Field(node_list, element_list, mesh_type, true_source, R=0.5, L=1
     y = np.array([n.coords[1] for n in node_list])
     z_coord = np.array([n.coords[2] for n in node_list])
     
-    # Estrazione dell'array degli errori tramite le funzioni matematiche già esistenti
+    # Extraction of the error array using the existing mathematical functions
     if mesh_type == 'square_surface':
         _, _, errors, _ = compute_err(node_list, true_source)
     elif mesh_type == 'cylinder':
