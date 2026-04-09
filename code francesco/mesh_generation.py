@@ -183,3 +183,42 @@ def generate_square_with_hole(N, L, R, output_dir):
     gmsh.finalize()
 
     return output_path
+
+def generate_gaussian_surface(N, Rmax, A, sigma, output_dir):
+    import gmsh, numpy as np, os
+
+    gmsh.initialize()
+    gmsh.model.add("gaussian_surface")
+
+    lc = 0.1#Rmax / (N - 1)
+
+    rs = np.linspace(0, Rmax, N)
+    pts = []
+
+    for r in rs:
+        z = A * np.exp(-r**2 / sigma**2)
+        pts.append(gmsh.model.occ.addPoint(r, 0, z))
+
+    spline = gmsh.model.occ.addSpline(pts)
+
+    gmsh.model.occ.synchronize()
+
+    angle = 2 * np.pi
+    out = gmsh.model.occ.revolve([(1, spline)], 0, 0, 0, 0, 0, 1, angle)
+
+    gmsh.model.occ.synchronize()
+
+    surfaces = [e[1] for e in out if e[0] == 2]
+
+    gmsh.model.mesh.setSize(gmsh.model.getEntities(0), lc)
+
+    gmsh.model.addPhysicalGroup(2, surfaces, 1)
+    gmsh.model.setPhysicalName(2, 1, "gaussian_surface")
+
+    gmsh.model.mesh.generate(2)
+
+    output_path = os.path.join(output_dir, "gaussian_surface.msh")
+    gmsh.write(output_path)
+    gmsh.finalize()
+
+    return output_path

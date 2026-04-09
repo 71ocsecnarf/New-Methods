@@ -315,13 +315,13 @@ def _segment_crosses_missing_quadrant(S, P, L):
 # =============================================
 
 
-def Plot_Isolines(node_list, element_list):
+def Plot_Isolines(node_list, element_list, source = 0.2):
 
     x = np.array([n.coords[0] for n in node_list])
     y = np.array([n.coords[1] for n in node_list])
     z = np.array([n.dist for n in node_list])
 
-    levels = 20
+    levels = 40
     triangles = []
     for e in element_list:
         triangles.append([n.idx for n in e.nodes])
@@ -337,8 +337,14 @@ def Plot_Isolines(node_list, element_list):
     plt.clabel(lines, inline=True, fontsize=8)
 
     plt.triplot(x, y, triangles, color='black', alpha=0.1, linewidth=0.5)
-    x_line = np.linspace(0.2, 0.8, 100)
-    y_line = (5/3) * (x_line - 0.2)
+
+    middle = [0.5, 0.5]
+    m = (middle[1] - 0) / (middle[0]-source)
+    p = -m*source
+
+    xf = (1 - p) / m
+    x_line = np.linspace(source, xf, 100)
+    y_line = m*x_line + p
 
     plt.plot(x_line, y_line, 'r--', linewidth=2)
     plt.title("FMM - Plot of the levelsets")
@@ -385,7 +391,7 @@ def Plot_Isolines_3D(node_list, element_list, source_coords=None):
     R_mean = np.sqrt(x**2 + y**2).mean()
     R_iso  = R_mean * 1.008
 
-    n_levels = 15
+    n_levels = 20
     eps      = (val.max() - val.min()) * 0.001
     levels   = np.linspace(val.min() + eps, val.max() - eps, n_levels)
 
@@ -404,10 +410,10 @@ def Plot_Isolines_3D(node_list, element_list, source_coords=None):
                     py = y[ea] + t * (y[eb] - y[ea])
                     pz = z[ea] + t * (z[eb] - z[ea])
                     # Re-project on the cylinder with R_iso
-                    r_pt = np.sqrt(px**2 + py**2)
-                    if r_pt > 1e-10:
-                        px = px / r_pt * R_iso
-                        py = py / r_pt * R_iso
+                    # r_pt = np.sqrt(px**2 + py**2)
+                    # if r_pt > 1e-10:
+                    #     px = px / r_pt * R_iso
+                    #     py = py / r_pt * R_iso
                     pts.append((px, py, pz))
 
             if len(pts) == 2:

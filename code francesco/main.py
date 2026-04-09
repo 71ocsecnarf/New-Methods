@@ -13,8 +13,8 @@ import mesh_generation
 # ---- Parameter to modify to change geometry -----
 # =================================================
 
-MESH_TYPE = 'hole'  # 'square_surface', 'cylinder' or 'l_shape', 'hole'
-FMM_TYPE = 'circ'              # 'standard for FMM of 'circ' for higher order FMM
+MESH_TYPE = 'l_shape'  # 'square_surface', 'cylinder' or 'l_shape', 'hole', 'gauss'
+FMM_TYPE = 'standard'              # 'standard for FMM of 'circ' for higher order FMM
 
 # -------------------------------------------------
 
@@ -25,6 +25,10 @@ SOURCE_Z     = 0.5    # height along the cylinder
 
 # For square_surface: source specified as (x, y)
 SOURCE_XY = np.array([0.2, 0.])
+
+RMAX = 2
+SOURCE_GAUSS = np.array([RMAX, 0, 0])
+
 
 # -------------------------------------------------
 
@@ -50,6 +54,8 @@ def make_source_coords(mesh_type, R=0.5, H=1.0):
         return np.array([SOURCE_XY[0], SOURCE_XY[1], 0.0])
     elif mesh_type == 'hole':
         return np.array([SOURCE_XY[0], SOURCE_XY[1], 0.0])
+    elif mesh_type == 'gauss':
+        return np.array([SOURCE_GAUSS[0], SOURCE_GAUSS[1], SOURCE_GAUSS[2]])
     else:
         raise ValueError(f"Unknown mesh_type: '{mesh_type}'")
 
@@ -68,7 +74,7 @@ def main(mesh_type=MESH_TYPE, fmm_type=FMM_TYPE):
         mesh_generation.generate_mesh(N, L, mesh_type, output_path)
 
     elif mesh_type == 'l_shape':
-        N = 20       # number of points along the longest edge
+        N = 40       # number of points along the longest edge
         L = 1.0      # bounding box side length; concave corner is at (L/2, L/2)
         output_path   = os.path.join(current_dir, "l_shape.msh")
         source_coords = make_source_coords(mesh_type)
@@ -76,20 +82,30 @@ def main(mesh_type=MESH_TYPE, fmm_type=FMM_TYPE):
         mesh_generation.generate_mesh(N, L, mesh_type, output_path)    
 
     elif mesh_type == 'cylinder':
-        N = 20
+        N = 30
         R = 1
         H = 1.0
         output_path   = os.path.join(current_dir, "cylinder_surface.msh")
         source_coords = make_source_coords(mesh_type, R=R, H=H)
         mesh_generation.generate_cylinder_meshV2(N, R, H, current_dir)
     elif mesh_type == 'hole':
-        N = 100
+        N = 20
         L = 1
         R = 0.2
 
         source_coords = make_source_coords(mesh_type)
 
         output_path = mesh_generation.generate_square_with_hole(N, L, R, current_dir)
+
+    elif mesh_type == 'gauss':
+        N = 100  
+        Rmax = RMAX
+        A = 1
+        sigma=0.3
+        source_coords = make_source_coords(mesh_type)
+
+        output_path = mesh_generation.generate_gaussian_surface(N, Rmax, A, sigma, current_dir)
+
     else:
         raise ValueError(f"Unknown mesh_type: '{mesh_type}'")
 
@@ -126,12 +142,18 @@ def main(mesh_type=MESH_TYPE, fmm_type=FMM_TYPE):
     if mesh_type in ('square_surface', 'l_shape'):
         solver.Plot_Isolines(node_list, element_list)
         solver.Plot_Error_Field(node_list, element_list, mesh_type, snapped_coords, L=1.0)
+        
     elif mesh_type == 'cylinder':
         solver.Plot_Isolines_3D(node_list, element_list,
                                 source_coords=snapped_coords)
         solver.Plot_Error_Field(node_list, element_list, mesh_type, snapped_coords, R=0.5)
+
     elif mesh_type == 'hole':
-        solver.Plot_Isolines(node_list, element_list)
+        solver.Plot_Isolines(node_list, element_list, source = source_nodes[0].coords[0])
+
+    elif mesh_type == 'gauss':
+        solver.Plot_Isolines_3D(node_list, element_list,
+                                source_coords=snapped_coords)
     plt.show()
     
     gmsh.finalize()
