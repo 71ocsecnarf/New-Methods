@@ -106,8 +106,8 @@ def eikonal_sol(node, F=1.0):
             CA = node_a.coords - node.coords
             CB = node_b.coords - node.coords
             cos_theta = np.dot(CA, CB) / (b * a)
-            sin_theta = np.sqrt(1 - cos_theta**2)   
-            #! Possible error if cos_theta > 1 due to numerical errors, gemini suggest to use max(0, 1-cos_theta^2), i do not think it is useful
+            sin_theta = np.sqrt(max(0, 1 - cos_theta**2))   # Avoid numerical errors
+            #sin_theta = np.sqrt( 1 - cos_theta**2)
 
             # Quadratic equation coefficient
             A = a**2 + b**2 -2*a*b*cos_theta
@@ -125,6 +125,7 @@ def eikonal_sol(node, F=1.0):
                 if t_sol > 1e-12 and u < t_sol:
                     cond = b * (t_sol - u) / t_sol
                     
+                    #!!! Here I put the fix
                     # Upper bound protected against division by zero
                     upper_bound = (a / cos_theta) if cos_theta > 1e-12 else float('inf')
                     
@@ -147,7 +148,6 @@ def eikonal_sol(node, F=1.0):
             dist_1d = node_b.dist + node.distance_to_other_node(node_b) * F # T(B) + c*F
             dist = min(dist, dist_1d)
        
-       #! Can we delete these two elif (and consequently the if at the start) and put them alltogether without checking if the two nodes are alive?
     return dist
 #########################################
 ##### FMM with circular wavefornt #######
