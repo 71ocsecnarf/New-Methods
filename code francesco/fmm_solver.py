@@ -103,8 +103,9 @@ def eikonal_sol(node, F=1.0):
 
             # Computation of the angle theta using the cosine theorem
             #          a^2 = b^2 + c^2 - 2bc cos_theta 
-            cos_theta = np.clip((b**2 - c**2 + a**2) / (2*b*c), -1.0, 1.0)
-            #cos_theta = np.clip((b**2 + c**2 - a**2) / (2*b*c), -1.0, 1.0)
+            CA = node_a.coords - node.coords
+            CB = node_b.coords - node.coords
+            cos_theta = np.dot(CA, CB) / (b * a)
             sin_theta = np.sqrt(1 - cos_theta**2)   
             #! Possible error if cos_theta > 1 due to numerical errors, gemini suggest to use max(0, 1-cos_theta^2), i do not think it is useful
 
@@ -118,13 +119,18 @@ def eikonal_sol(node, F=1.0):
            
             # Solve only if Delta >= 0 
             if Delta >= 0: 
-                t_sol = (-B + np.sqrt(Delta)) / (2 *A)
+                t_sol = (-B + np.sqrt(Delta)) / (2 * A)
 
                 #! Check that t_sol can be very small
-                if t_sol > 1e-12 * (node_a.dist + 1.0) and u <= t_sol + 1e-12*(abs(u)+1.0):
+                if t_sol > 1e-12 and u < t_sol:
                     cond = b * (t_sol - u) / t_sol
-                    if 0 < cond < c:
-                        t = t_sol + node_a.dist
+                    
+                    # Upper bound protected against division by zero
+                    upper_bound = (a / cos_theta) if cos_theta > 1e-12 else float('inf')
+                    
+                    # Removed premature return, using non-strict inequalities (<=)
+                    if a * cos_theta <= cond <= upper_bound:
+                       t = t_sol + node_a.dist
 
             if t == float('inf'):
                 t = min(b * F + node_a.dist, a * F + node_b.dist)
@@ -137,18 +143,12 @@ def eikonal_sol(node, F=1.0):
             dist_1d = node_a.dist + node.distance_to_other_node(node_a) * F  # T(A) + b*F
             dist = min(dist, dist_1d)
 
-        """
         elif node_b.state == 'ALIVE':
             dist_1d = node_b.dist + node.distance_to_other_node(node_b) * F # T(B) + c*F
             dist = min(dist, dist_1d)
-        """
-        
        
        #! Can we delete these two elif (and consequently the if at the start) and put them alltogether without checking if the two nodes are alive?
     return dist
-
-
-
 #########################################
 ##### FMM with circular wavefornt #######
 #########################################

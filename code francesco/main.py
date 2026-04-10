@@ -13,8 +13,8 @@ import mesh_generation
 # ---- Parameter to modify to change geometry -----
 # =================================================
 
-MESH_TYPE = 'hole'  # 'square_surface', 'cylinder', 'hole' or 'l_shape'
-FMM_TYPE = 'circ'              # 'standard for FMM of 'circ' for higher order FMM
+MESH_TYPE = 'square_surface'  # 'square_surface', 'cylinder', 'hole', 'l_shape' or 'l_cylinder'
+FMM_TYPE = 'standard'              # 'standard' for FMM of 'circ' for higher order FMM
 
 # -------------------------------------------------
 
@@ -68,7 +68,7 @@ def main(mesh_type=MESH_TYPE, fmm_type=FMM_TYPE):
         mesh_generation.generate_mesh(N, L, mesh_type, output_path)
 
     elif mesh_type == 'l_shape':
-        N = 10       # number of points along the longest edge
+        N = 20     # number of points along the longest edge
         L = 1.0      # bounding box side length; concave corner is at (L/2, L/2)
         output_path   = os.path.join(current_dir, "l_shape.msh")
         source_coords = make_source_coords(mesh_type)
@@ -91,6 +91,14 @@ def main(mesh_type=MESH_TYPE, fmm_type=FMM_TYPE):
         source_coords = make_source_coords(mesh_type)
 
         output_path = mesh_generation.generate_square_with_hole(N, L, R, current_dir)
+
+    elif mesh_type == 'l_cylinder':
+        N = 20
+        R = 0.5
+        H = 1.0
+        output_path   = os.path.join(current_dir, "l_cylinder_surface.msh")
+        source_coords = np.array([-R, 0.0, 0.3])   # theta=-pi/2 (left edge), z=0.3
+        mesh_generation.generate_l_cylinder_mesh(N, R, H, current_dir)
 
     else:
         raise ValueError(f"Unknown mesh_type: '{mesh_type}'")
@@ -136,6 +144,10 @@ def main(mesh_type=MESH_TYPE, fmm_type=FMM_TYPE):
     
     elif mesh_type == 'hole':
         solver.Plot_Isolines(node_list, element_list)
+
+    elif mesh_type == 'l_cylinder':
+        solver.Plot_Isolines_L_Cylinder(node_list, element_list, source_coords=snapped_coords)
+        #solver.Plot_Error_Field(node_list, element_list, 'cylinder',snapped_coords, R=0.5)
 
     plt.show()
     

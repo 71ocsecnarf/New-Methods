@@ -432,6 +432,174 @@ def Plot_Isolines_3D(node_list, element_list, source_coords=None):
     #plt.show()
 
 
+def Plot_Isolines_L_Cylinder(node_list, element_list, source_coords=None):
+    """
+    Plot the geodesic distance field and isolines on the L-shaped cylinder surface.
+
+    This function is identical in structure to Plot_Isolines_3D (used for the
+    full half-cylinder), but adapted for the L-shaped variant:
+      - The radial re-projection of isoline points uses the LOCAL radius of each
+        interpolated point instead of a fixed global R_mean. This is necessary
+        because the L-cylinder surface is not a surface of constant radius from
+        a single axis -- different parts of the surface may have slightly
+        different radii due to meshing.
+      - The title and labels reflect the L-cylinder geometry.
+
+    Parameters
+    ----------
+    node_list    : array of NODE objects -- all mesh nodes with .coords and .dist
+    element_list : array of ELEMENT objects -- all triangles with .nodes
+    source_coords: array-like of shape (3,), optional -- 3D coords of the source
+                   point to mark on the plot with a red dot
+    """
+
+    from mpl_toolkits.mplot3d import Axes3D
+    from matplotlib.colors import Normalize
+    from matplotlib.cm import ScalarMappable
+    import matplotlib.cm as cm
+
+    # ------------------------------------------------------------------
+    # STEP 1: Extract node coordinates and FMM distance values
+    #
+    # List comprehensions in Python: [expression for item in iterable]
+    # This is equivalent to a for-loop that builds an array.
+    # np.array([...]) converts the Python list to a NumPy array (like a MATLAB vector).
+    # ------------------------------------------------------------------
+    x   = np.array([n.coords[0] for n in node_list])   # x-coordinates of all nodes
+    y   = np.array([n.coords[1] for n in node_list])   # y-coordinates of all nodes
+    z   = np.array([n.coords[2] for n in node_list])   # z-coordinates of all nodes
+    val = np.array([n.dist      for n in node_list])   # FMM distance at each node
+
+    # Build the triangle connectivity array: shape (n_triangles, 3)
+    # Each row contains the indices (idx) of the 3 nodes of one triangle.
+    triangles = np.array([[n.idx for n in e.nodes] for e in element_list])
+
+    # ------------------------------------------------------------------
+    # STEP 2: Compute per-face colors for the surface plot
+    #
+    # face_val: average distance over the 3 nodes of each triangle.
+    # val[triangles] is fancy indexing: for each triangle row [i, j, k],
+    # it returns [val[i], val[j], val[k]]. Shape: (n_tri, 3).
+    # .mean(axis=1) averages along axis 1 (the 3 nodes), giving one value per face.
+    # ------------------------------------------------------------------
+    face_val = val[triangles].mean(axis=1)
+
+    # Normalize maps the raw distance values to [0, 1] for colormap lookup
+    norm_c = Normalize(vmin=val.min(), vmax=val.max())
+    cmap   = cm.viridis
+    colors = cmap(norm_c(face_val))   # RGBA color for each triangle face
+
+    # ------------------------------------------------------------------
+    # STEP 3: Create the 3D figure and plot the colored surface
+    # ------------------------------------------------------------------
+    fig = plt.figure(figsize=(12, 8))
+    ax  = fig.add_subplot(111, projection='3d')   # '111' = 1 row, 1 col, subplot 1
+
+    # plot_trisurf draws a triangulated surface in 3D.
+    # shade=False + set_facecolors() lets us assign our own per-face colors
+    # instead of using matplotlib's default shading.
+    surf = ax.plot_trisurf(x, y, z, triangles=triangles,
+                           shade=False, antialiased=False, alpha=0.85)
+    surf.set_facecolors(colors)
+
+    # ------------------------------------------------------------------
+    # STEP 4: Mark the source point
+    # ------------------------------------------------------------------
+    if source_coords is not None:
+        ax.scatter(source_coords[0], source_coords[1], source_coords[2],
+                   color='red', s=100, zorder=5, label='Point source')
+        ax.legend()
+
+    # ------------------------------------------------------------------
+    # STEP 5: Draw isolines manually by linear interpolation on each triangle
+    #
+    # matplotlib has no built-in tricontour for 3D surfaces, so we do it
+    # manually: for each distance level, we scan every triangle edge and check
+    # if the level crosses that edge. If it does, we interpolate the crossing
+    # point in 3D, then draw a segment between the two crossing points of
+    # the same triangle.
+    #
+    # The isoline points are slightly offset radially (R_iso = R * 1.008)
+    # to avoid z-fighting (visual artifacts where two surfaces overlap exactly).
+    # Here we use the LOCAL radius of each interpolated point, so the offset
+    # is correct everywhere on the L-shaped surface (not just at a fixed R).
+    # ------------------------------------------------------------------
+
+    n_levels = 15
+    eps      = (val.max() - val.min()) * 0.001   # small margin to avoid boundary levels
+    levels   = np.linspace(val.min() + eps, val.max() - eps, n_levels)
+
+    RADIAL_OFFSET = 1.008   # push isolines 0.8% outward to avoid z-fighting
+
+    for level in levels:
+        label_pts = []   # will store one representative segment per level for labelling
+
+        for tri in triangles:
+            i0, i1, i2 = tri   # unpack the 3 node indices of this triangle
+
+            pts = []   # crossing points found on this triangle (0, 1, or 2)
+
+            # Check the 3 edges: (i0,i1), (i1,i2), (i2,i0)
+            for ea, eb in [(i0, i1), (i1, i2), (i2, i0)]:
+                va, vb = val[ea], val[eb]
+
+                # The level crosses this edge if val changes sign relative to level
+                # i.e. one endpoint is above and the other is below the level
+                if (va - level) * (vb - level) < 0:
+
+                    # Linear interpolation parameter t in [0, 1] along the edge
+                    # t=0 at node ea, t=1 at node eb
+                    t = (level - va) / (vb - va)
+
+                    # Interpolated 3D coordinates on the edge
+                    px = x[ea] + t * (x[eb] - x[ea])
+                    py = y[ea] + t * (y[eb] - y[ea])
+                    pz = z[ea] + t * (z[eb] - z[ea])
+
+                    # Radial offset: push the point slightly outward from the
+                    # cylinder axis so isolines are drawn on top of the surface.
+                    # We use the LOCAL in-plane radius of this specific point.
+                    r_local = np.sqrt(px**2 + py**2)
+                    if r_local > 1e-10:
+                        px = px / r_local * (r_local * RADIAL_OFFSET)
+                        py = py / r_local * (r_local * RADIAL_OFFSET)
+
+                    pts.append((px, py, pz))
+
+            # A triangle crossed by an isoline should give exactly 2 points
+            if len(pts) == 2:
+                ax.plot([pts[0][0], pts[1][0]],
+                        [pts[0][1], pts[1][1]],
+                        [pts[0][2], pts[1][2]],
+                        color='white', linewidth=1.2, alpha=1.0, zorder=10)
+                label_pts.append(pts)
+
+        # Place one text label per isoline level, at the midpoint of a
+        # representative segment (the middle one in the list)
+        if label_pts:
+            p0, p1 = label_pts[len(label_pts) // 2]   # '//' = integer division
+            mx = (p0[0] + p1[0]) / 2
+            my = (p0[1] + p1[1]) / 2
+            mz = (p0[2] + p1[2]) / 2
+            ax.text(mx, my, mz, f'{level:.2f}',
+                    color='yellow', fontsize=6.5, fontweight='bold',
+                    zorder=20, ha='center')
+
+    # ------------------------------------------------------------------
+    # STEP 6: Colorbar and axis labels
+    # ------------------------------------------------------------------
+    sm = ScalarMappable(cmap=cmap, norm=norm_c)
+    sm.set_array([])   # required boilerplate for standalone ScalarMappable colorbars
+    fig.colorbar(sm, ax=ax, shrink=0.5, label="Geodesic distance")
+
+    ax.set_title("FMM - Distance field on L-cylinder")
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
+    ax.set_zlabel("Z")
+
+    plt.tight_layout()
+
+
 def plot_convergence(h_values, errors_l2_fmm, errors_l2_circ, title, save_name):
 
     h_arr       = np.array(h_values[::-1])
@@ -523,3 +691,5 @@ def Plot_Error_Field(node_list, element_list, mesh_type, true_source, R=0.5, L=1
         plt.title(f"Error Distribution - {mesh_type}")
         plt.xlabel("X")
         plt.ylabel("Y")
+
+
