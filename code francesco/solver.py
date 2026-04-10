@@ -647,7 +647,7 @@ def Get_error_map_hole(node_list, source_node, element_list, r):
     #*Theta is the angle btween the tangeante and the line connecting source and center
     theta = np.arcsin(r / np.linalg.norm(Xc - source_node.coords))
     m_source_center = (yc- ys) / (xc - xs)
-
+    
     alpha = np.atan2(yc - ys, xc - xs)
 
     m1 = np.tan(alpha - theta)
@@ -656,6 +656,7 @@ def Get_error_map_hole(node_list, source_node, element_list, r):
     errors = []
     OnenodeErr = 0
     for n in node_list:
+        
         dy = (n.coords[1] - ys) 
         dx = (n.coords[0] - xs)
         m = dy / dx if abs(dx) > 1e-12 else np.inf
@@ -676,8 +677,8 @@ def Get_error_map_hole(node_list, source_node, element_list, r):
 
             true_d = 0
             ratio_n = r / dist_to_center
-            ratio_n = np.clip(ratio_n, -1.0, 1.0) 
             theta_n = np.arcsin(ratio_n)
+
             true_d += r / np.tan(theta_n)
             true_d += r / np.tan(theta)
 
@@ -685,17 +686,17 @@ def Get_error_map_hole(node_list, source_node, element_list, r):
             v1 /= np.linalg.norm(v1)
             v2 = -(Xc - source_node.coords)
             v2 /= np.linalg.norm(v2)
-            gamma = np.arccos(np.clip(np.dot(v1, v2), -1.0, 1.0))
+            gamma = np.pi - np.arccos(np.clip(np.dot(v1, v2), -1.0, 1.0))
+
             mline  = m_source_center
             p = yc - xc * mline
             isAboveLine = n.coords[1] >= (mline) * n.coords[0] + p
-            if isAboveLine:
-                beta1 = np.pi - (np.pi/2 - theta) - ((np.pi/2 - theta_n) + gamma)
-            else: 
-                beta1 = np.pi - (np.pi/2 - theta) - ((np.pi/2 - theta_n) - gamma)
-            # beta1 = np.pi - (np.pi/2 - theta) - ((np.pi/2 - theta_n) + gamma) if  else np.pi - (np.pi/2 - theta) - ((np.pi/2 - theta_n) - gamma)
+
+            beta1 = np.pi - (np.pi/2 - theta) - ((np.pi/2 - theta_n) + gamma) 
             beta2 = 2*np.pi - 2*(np.pi/2 - theta) - 2*(np.pi/2 - theta_n) - beta1
+            print(beta1*180/np.pi, beta2*180/np.pi)
             beta = min(beta1, beta2)
+
             true_d += r * beta
             errors.append(abs(true_d - n.dist))
         if n.coords[0] == 1 and n.coords[1] == 1: OnenodeErr = errors[-1]
@@ -703,7 +704,7 @@ def Get_error_map_hole(node_list, source_node, element_list, r):
     triangles = np.array([[n.idx for n in e.nodes] for e in element_list])
     x = np.array([n.coords[0] for n in node_list])
     y = np.array([n.coords[1] for n in node_list])
-    z_coord = np.array([n.coords[2] for n in node_list])
+    
     plt.figure(figsize=(8, 6))
     plt.gca().set_aspect('equal')
     

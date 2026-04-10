@@ -89,7 +89,7 @@ def main(mesh_type=MESH_TYPE, fmm_type=FMM_TYPE):
         source_coords = make_source_coords(mesh_type, R=R, H=H)
         mesh_generation.generate_cylinder_meshV2(N, R, H, current_dir)
     elif mesh_type == 'hole':
-        N = 200
+        N = 100
         L = 1
         R = 0.2
 
