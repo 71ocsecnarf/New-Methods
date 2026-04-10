@@ -13,7 +13,7 @@ import mesh_generation
 # ------------------------ Parameters ------------------------
 # ============================================================
 
-MESH_TYPE = 'cylinder'   # 'square_surface','l_shape' or 'cylinder'
+MESH_TYPE = 'hole'   # 'square_surface','l_shape', 'hole' or 'cylinder'
 N_VALUES  = [5 * 2**i for i in range(6)]
 
 # For cylinder: source specified as (theta_deg, z) in the unrolled domain
@@ -21,8 +21,8 @@ N_VALUES  = [5 * 2**i for i in range(6)]
 SOURCE_THETA_DEG = 90    # angle in degrees: 0 = front of cylinder (x=R, y=0)
 SOURCE_Z         = 0.1   # height along the cylinder
 
-# For square_surface: source specified as (x, y)
-SOURCE_XY = np.array([0., 0.])
+# For square_surface and hole: source specified as (x, y)
+SOURCE_XY = np.array([0.2, 0.0])
 
 # ------------------------------------------------------------
 
@@ -34,6 +34,7 @@ def make_source_coords(mesh_type, R=0.5, H=1.0):
       theta_deg in [-90, +90] degrees
     - Square:   (x, y)        --> (x, y, 0)
     - L-shape    : (x, y)         --> (x, y, 0)
+    - Hole       : (x, y)         --> (x, y, 0)
     """
     if mesh_type == 'cylinder':
         theta = np.deg2rad(SOURCE_THETA_DEG)   # convert degrees to radians
@@ -42,7 +43,7 @@ def make_source_coords(mesh_type, R=0.5, H=1.0):
         z = SOURCE_Z
         return np.array([x, y, z])
 
-    elif mesh_type in ('square_surface', 'l_shape'):
+    elif mesh_type in ('square_surface', 'l_shape', 'hole'):
         return np.array([SOURCE_XY[0], SOURCE_XY[1], 0.0])
 
     else:
@@ -104,6 +105,23 @@ def get_config(mesh_type, current_dir):
             'save_name'      : 'ConvStudyLshape.pdf',
             'L_val'          : L,
             'R_val'          : None
+        }
+
+    elif mesh_type == 'hole':
+        L = 1.0
+        R = 0.2
+        return {
+            'source_coord'   : make_source_coords(mesh_type),
+            'generate_mesh'  : lambda N: mesh_generation.generate_square_with_hole(
+                                    N, L, R, current_dir),
+            'get_output_path': lambda N: os.path.join(current_dir, "square_with_hole.msh"),
+            'get_h'          : lambda N: L / (N - 1),
+            'compute_err'    : lambda node_list, src: solver.compute_err_hole(
+                                    node_list, src, L, R),
+            'plot_title'     : 'FMM Convergence - Square with Hole',
+            'save_name'      : 'ConvStudyHole.pdf',
+            'L_val'          : L,
+            'R_val'          : R
         }
 
     else:

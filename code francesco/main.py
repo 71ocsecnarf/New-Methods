@@ -13,8 +13,8 @@ import mesh_generation
 # ---- Parameter to modify to change geometry -----
 # =================================================
 
-MESH_TYPE = 'square_surface'  # 'square_surface', 'cylinder', 'hole', 'l_shape' or 'l_cylinder'
-FMM_TYPE = 'standard'              # 'standard' for FMM of 'circ' for higher order FMM
+MESH_TYPE = 'hole'  # 'square_surface', 'cylinder', 'hole', 'l_shape' or 'l_cylinder'
+FMM_TYPE = 'circ'              # 'standard' for FMM of 'circ' for higher order FMM
 
 # -------------------------------------------------
 
@@ -24,7 +24,7 @@ SOURCE_THETA_DEG = 0    # angle in degrees: 0 = front of cylinder (x=R, y=0)
 SOURCE_Z     = 0.5    # height along the cylinder
 
 # For square_surface: source specified as (x, y)
-SOURCE_XY = np.array([0.2, 0.0])
+SOURCE_XY = np.array([0.0, 0.0])
 
 # -------------------------------------------------
 
@@ -88,7 +88,7 @@ def main(mesh_type=MESH_TYPE, fmm_type=FMM_TYPE):
         L = 1
         R = 0.2
 
-        source_coords = make_source_coords(mesh_type)
+        source_coords = make_source_coords(mesh_type, R = R, H = L)
 
         output_path = mesh_generation.generate_square_with_hole(N, L, R, current_dir)
 
@@ -133,17 +133,14 @@ def main(mesh_type=MESH_TYPE, fmm_type=FMM_TYPE):
     # Use the snapped source coordinates for the plot marker
     snapped_coords = source_nodes[0].coords
 
-    if mesh_type in ('square_surface', 'l_shape'):
+    if mesh_type in ('square_surface', 'l_shape', 'hole'):
         solver.Plot_Isolines(node_list, element_list)
-        solver.Plot_Error_Field(node_list, element_list, mesh_type, snapped_coords, L=1.0)
+        solver.Plot_Error_Field(node_list, element_list, mesh_type, snapped_coords, L=1.0, R = R)
     
     elif mesh_type == 'cylinder':
         solver.Plot_Isolines_3D(node_list, element_list,
                                 source_coords=snapped_coords)
         solver.Plot_Error_Field(node_list, element_list, mesh_type, snapped_coords, R=0.5)
-    
-    elif mesh_type == 'hole':
-        solver.Plot_Isolines(node_list, element_list)
 
     elif mesh_type == 'l_cylinder':
         solver.Plot_Isolines_L_Cylinder(node_list, element_list, source_coords=snapped_coords)

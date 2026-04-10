@@ -301,6 +301,97 @@ def segment_crosses_missing_quadrant(S, P, L):
 
     return False
 
+
+
+def compute_err_hole(node_list, source_coord, L=1.0, R=0.2):
+    """
+    Compute geodesic errors for the square with hole geometry.
+    Returns: (max_error, max_relative_error, pointwise_errors_array, L2_error)
+    """
+    errors     = []  
+    errors_rel = []  
+
+    for node in node_list:
+        if node.dist == float('inf'):
+            errors.append(0.0)
+            continue
+            
+        d_exact = geodesic_hole(node.coords, source_coord, L, R)
+        err_i = abs(d_exact - node.dist)
+        errors.append(err_i)
+
+        if d_exact > 1e-14:
+            errors_rel.append(err_i / d_exact)
+
+    err     = np.max(errors) if errors else 0.0
+    err_rel = np.max(errors_rel) if errors_rel else 0.0
+    e_l2    = np.sqrt(np.mean(np.array(errors) ** 2)) if errors else 0.0 
+
+    return err, err_rel, np.array(errors), e_l2
+
+
+
+def geodesic_hole(node_coords, source_coords, L=1.0, R=0.2):
+    """
+    Exact geodesic distance on the square with hole domain.
+
+    The hole is a disk of radius R centered at (L/2, L/2).
+    The source is outside the hole.
+
+    If the straight line S->P intersects the hole, the geodesic must detour
+    around the hole. The exact distance can be computed by considering all
+    possible tangent points on the hole and taking the minimum path:
+        d = min_{tangent points T} [dist(S, T) + dist(T, P)]
+
+    Otherwise the Euclidean distance is exact.
+    """
+
+    # Supposing the hole is centered at (0,0)
+    C_coords = np.array([L/2, L/2, 0.0])
+
+    # Determine the vectors starting from the center and pointing towards the 
+    # source S (source_coords) and the target P (node_coords)
+    v_S = source_coords - C_coords
+    v_P = node_coords   - C_coords
+
+    # Compute their norms, i.e. the distances from the center C
+    d_S = np.linalg.norm(v_S)
+    d_P = np.linalg.norm(v_P)
+    # Avoid any problems due to mesh not properly corrected
+    d_S = max(d_S, R)
+    d_P = max(d_P, R)
+
+    # Compute the angles from the vectors to the tangency points
+    alpha_S = np.arccos(np.clip(R / d_S, -1.0, 1.0))
+    alpha_P = np.arccos(np.clip(R / d_P, -1.0, 1.0))
+
+    # Lowest angle separating the vectors v_S and v_P
+    """
+    dot_prod = np.dot(v_S, v_P) / (d_S * d_P)
+    phi = np.arccos(np.clip(dot_prod, -1.0, 1.0))   
+    # Dot Product can cause problems of signs
+    """
+    # Use atan2 to get the signed angle and then take absolute value for the separation
+    phi = abs(np.arctan2(v_S[1], v_S[0]) - np.arctan2(v_P[1], v_P[0]))
+    if phi > np.pi: 
+        # The absolute difference must be always [0 pi]
+        phi = 2 * np.pi - phi
+
+
+    # Visibility condition
+    if phi <= alpha_S + alpha_P:
+        # P is directly visible from S --> Euclidean distance 
+        return np.linalg.norm(node_coords - source_coords)
+    
+    else:
+        # P is not visible from S --> geodesic goes through the tangents to the hole
+        t_S = np.sqrt(d_S**2 - R**2)
+        t_P = np.sqrt(d_P**2 - R**2)
+        arc_angle = phi - (alpha_S + alpha_P)
+        return t_S + t_P + R * arc_angle
+
+    
+
 # =============================================
 # ------------------- Plots -------------------
 # =============================================
@@ -653,6 +744,9 @@ def Plot_Error_Field(node_list, element_list, mesh_type, true_source, R=0.5, L=1
         _, errors, _ = compute_err_cylinder(node_list, true_source, R)
     elif mesh_type == 'l_shape':
         _, _, errors, _ = compute_err_l_shape(node_list, true_source, L)
+    elif mesh_type == 'hole':
+        # Passiamo R correttamente, sia che sia 0.2 o il default
+        _, _, errors, _ = compute_err_hole(node_list, true_source, L, R)
         
     triangles = np.array([[n.idx for n in e.nodes] for e in element_list])
     
@@ -678,7 +772,7 @@ def Plot_Error_Field(node_list, element_list, mesh_type, true_source, R=0.5, L=1
         ax.set_ylabel("Y")
         ax.set_zlabel("Z")
         
-    # --- 2D PLOT for L-Shape and Square ---
+    # --- 2D PLOT for L-Shape, Square and Hole ---
     else:
         plt.figure(figsize=(8, 6))
         plt.gca().set_aspect('equal')
