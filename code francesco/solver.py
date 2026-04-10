@@ -541,3 +541,215 @@ def Plot_Error_Field(node_list, element_list, mesh_type, true_source, R=0.5, L=1
         plt.title(f"Error Distribution - {mesh_type}")
         plt.xlabel("X")
         plt.ylabel("Y")
+
+
+def ComputeNodeError(node, source_node, xc=0.5, yc=0.5, r=0.2):
+    """Calcule l'erreur absolue pour un seul nœud"""
+    xs = source_node.coords[0]
+    ys = source_node.coords[1]
+    Xc = np.array([xc, yc, 0])
+
+    theta = np.arcsin(r / np.linalg.norm(Xc - source_node.coords))
+    alpha = np.arctan2(yc - ys, xc - xs)
+    m1 = np.tan(alpha - theta)
+    m2 = np.tan(alpha + theta)
+    m_source_center = (yc - ys) / (xc - xs)
+
+    dy = node.coords[1] - ys
+    dx = node.coords[0] - xs
+    m = dy / dx if abs(dx) > 1e-12 else np.nan
+    n_r = np.linalg.norm(node.coords - source_node.coords)
+    dist_to_center = np.linalg.norm(Xc - node.coords)
+
+    # Pas dans la zone d'ombre
+    if m <= m1 or m >= m2:
+        return abs(n_r - node.dist)
+
+    # Avant le cercle
+    if n_r <= np.linalg.norm(Xc - source_node.coords):
+        return abs(n_r - node.dist)
+
+    # Dans le cercle
+    if dist_to_center < r:
+        return 0.0
+
+    # Zone d'ombre → chemin qui contourne
+    ratio_n = np.clip(r / dist_to_center, -1.0, 1.0)
+    theta_n = np.arcsin(ratio_n)
+
+    true_d = r / np.tan(theta_n) + r / np.tan(theta)
+
+    v1 = (node.coords - Xc) / dist_to_center
+    v2 = (Xc - source_node.coords) / np.linalg.norm(Xc - source_node.coords)
+    gamma = np.arccos(np.clip(np.dot(v1, v2), -1.0, 1.0))  # angle réel
+
+    p_line = yc - m_source_center * xc
+    above = node.coords[1] >= m_source_center * node.coords[0] + p_line
+
+    beta1 = np.pi - (np.pi/2 - theta) - (np.pi/2 - theta_n - gamma) if above \
+            else np.pi - (np.pi/2 - theta) - (np.pi/2 - theta_n + gamma)
+    beta2 = 2*np.pi - 2*(np.pi/2 - theta) - 2*(np.pi/2 - theta_n) - beta1
+    beta = min(abs(beta1), abs(beta2))
+    true_d += r * beta
+
+    return abs(true_d - node.dist)
+
+
+def ConvergenceStudy(mesh_sizes, source_nodes, node_lists, target_coords=(1.0, 1.0),
+                     xc=0.5, yc=0.5, r=0.2):
+    """
+    Étude de convergence sur le nœud le plus proche de target_coords.
+    
+    mesh_sizes   : liste des tailles de maille [h1, h2, h3, ...]
+    source_nodes : liste des noeuds source (un par maillage)
+    node_lists   : liste des node_list (une par maillage)
+    """
+    errors = []
+
+    for node_list, source_node in zip(node_lists, source_nodes):
+        # Trouver le nœud le plus proche de (1, 1)
+        target = np.array([target_coords[0], target_coords[1], 0])
+        closest = min(node_list, key=lambda n: np.linalg.norm(n.coords - target))
+
+        err = ComputeNodeError(closest, source_node, xc, yc, r)
+        errors.append(err)
+        print(f"h = {mesh_sizes[len(errors)-1]:.4f} | error = {err:.6f}")
+
+    # Plot
+    plt.figure()
+    plt.loglog(mesh_sizes, errors, 'bo-', label='Error at (1,1)')
+    # Référence ordre 1 et ordre 2
+    h = np.array(mesh_sizes)
+    plt.loglog(h, h * errors[0]/mesh_sizes[0], 'k--', label='O(h)')
+    plt.loglog(h, h**2 * errors[0]/mesh_sizes[0]**2, 'r--', label='O(h²)')
+    plt.xlabel("Mesh size h")
+    plt.ylabel("Absolute Error")
+    plt.title("Convergence at node (1, 1)")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+    return errors
+
+
+def Get_error_map_hole(node_list, source_node, element_list, r):
+
+    #* First i get the nodes that are not in the shadow zone (true dist = euclidean dist)
+    xs = source_node.coords[0]
+    ys = source_node.coords[1]
+
+    #*Center of the circle
+    xc = 0.5
+    yc = 0.5
+    Xc = np.array([xc, yc, 0])
+    r = r
+
+    #*Theta is the angle btween the tangeante and the line connecting source and center
+    theta = np.arcsin(r / np.linalg.norm(Xc - source_node.coords))
+    m_source_center = (yc- ys) / (xc - xs)
+
+    alpha = np.atan2(yc - ys, xc - xs)
+
+    m1 = np.tan(alpha - theta)
+    m2 = np.tan(alpha + theta)
+
+    errors = []
+    OnenodeErr = 0
+    for n in node_list:
+        dy = (n.coords[1] - ys) 
+        dx = (n.coords[0] - xs)
+        m = dy / dx if abs(dx) > 1e-12 else np.inf
+        n_r = np.linalg.norm(n.coords - source_node.coords)
+        dist_to_center = np.linalg.norm(Xc - n.coords)
+
+        if m <= m1 or m >= m2:
+            errors.append(abs(np.linalg.norm(n.coords - source_node.coords) - n.dist))
+
+        elif n_r <= (r**2 + np.linalg.norm(Xc - source_node.coords)**2)**(1/2):
+            errors.append(abs(np.linalg.norm(n.coords - source_node.coords) - n.dist))
+
+        else:
+            # Nœud trop proche du cercle (dedans ou sur le bord)
+            if dist_to_center < r:
+                errors.append(0.0) 
+                continue
+
+            true_d = 0
+            ratio_n = r / dist_to_center
+            ratio_n = np.clip(ratio_n, -1.0, 1.0) 
+            theta_n = np.arcsin(ratio_n)
+            true_d += r / np.tan(theta_n)
+            true_d += r / np.tan(theta)
+
+            v1 = n.coords - Xc
+            v1 /= np.linalg.norm(v1)
+            v2 = -(Xc - source_node.coords)
+            v2 /= np.linalg.norm(v2)
+            gamma = np.arccos(np.clip(np.dot(v1, v2), -1.0, 1.0))
+            mline  = m_source_center
+            p = yc - xc * mline
+            isAboveLine = n.coords[1] >= (mline) * n.coords[0] + p
+            if isAboveLine:
+                beta1 = np.pi - (np.pi/2 - theta) - ((np.pi/2 - theta_n) + gamma)
+            else: 
+                beta1 = np.pi - (np.pi/2 - theta) - ((np.pi/2 - theta_n) - gamma)
+            # beta1 = np.pi - (np.pi/2 - theta) - ((np.pi/2 - theta_n) + gamma) if  else np.pi - (np.pi/2 - theta) - ((np.pi/2 - theta_n) - gamma)
+            beta2 = 2*np.pi - 2*(np.pi/2 - theta) - 2*(np.pi/2 - theta_n) - beta1
+            beta = min(beta1, beta2)
+            true_d += r * beta
+            errors.append(abs(true_d - n.dist))
+        if n.coords[0] == 1 and n.coords[1] == 1: OnenodeErr = errors[-1]
+
+    triangles = np.array([[n.idx for n in e.nodes] for e in element_list])
+    x = np.array([n.coords[0] for n in node_list])
+    y = np.array([n.coords[1] for n in node_list])
+    z_coord = np.array([n.coords[2] for n in node_list])
+    plt.figure(figsize=(8, 6))
+    plt.gca().set_aspect('equal')
+    
+    cntr = plt.tricontourf(x, y, triangles, errors, levels=40, cmap="inferno")#Wistia
+    plt.colorbar(cntr, label="Absolute Error")
+    
+    plt.triplot(x, y, triangles, color='black', alpha=0.1, linewidth=0.5)
+    middle = [0.5, 0.5]
+    source = source_node.coords[0]
+    m = (middle[1] - 0) / (middle[0]-source)
+    p = -m*source
+
+    xf = (1 - p) / m
+    x_line = np.linspace(source, xf, 100)
+    y_line = m*x_line + p
+    def clip_line(xs, ys, phi):
+        t_vals = []
+        
+        if abs(np.cos(phi)) > 1e-12:
+            t_vals += [(0 - xs)/np.cos(phi), (1 - xs)/np.cos(phi)]
+        if abs(np.sin(phi)) > 1e-12:
+            t_vals += [(0 - ys)/np.sin(phi), (1 - ys)/np.sin(phi)]
+        
+        t_vals = [t for t in t_vals if t > 0]
+        tmax = min(t_vals) if t_vals else 1
+        
+        t = np.linspace(0, tmax, 100)
+        return xs + t*np.cos(phi), ys + t*np.sin(phi)
+    dx = xc - xs
+    dy = yc - ys
+    d = np.sqrt(dx**2 + dy**2)
+
+    alpha = np.arctan2(dy, dx)
+    theta = np.arcsin(r / d)
+
+    phi1 = alpha - theta
+    phi2 = alpha + theta
+    x_t1, y_t1 = clip_line(xs, ys, phi1)
+    x_t2, y_t2 = clip_line(xs, ys, phi2)
+
+    plt.plot(x_t1, y_t1, 'cyan', linewidth=1)
+    plt.plot(x_t2, y_t2, 'cyan', linewidth=1)
+
+    plt.plot(x_line, y_line, 'r--', linewidth=1)
+    plt.title(f"Error Distribution - hole")
+    plt.xlabel("X")
+    plt.ylabel("Y")
+
+    

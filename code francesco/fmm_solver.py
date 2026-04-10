@@ -266,7 +266,7 @@ def fmm_algorithm_circ(node_list, source_nodes):
 
 
 def eikonal_sol_circ(node, node_virtual_source):
-    samelinetol = 1e-6
+    samelinetol = 1e-1
     dist = float('inf')  # Distance Initialization
     best_node_vs = None
     isOnTheSameLine = False
@@ -281,10 +281,10 @@ def eikonal_sol_circ(node, node_virtual_source):
         normal = tri.compute_outward_normal()
         tA_1d = node_a.dist + node.distance_to_other_node(node_a)
         tB_1d = node_b.dist + node.distance_to_other_node(node_b)
-        t_1d_list.append(tA_1d)
-        t_1d_list.append(tB_1d)
-        node_list.append(node_a)
-        node_list.append(node_b)
+        # t_1d_list.append(tA_1d)
+        # t_1d_list.append(tB_1d)
+        # node_list.append(node_a)
+        # node_list.append(node_b)
     
         # ------------------------------------------
         # CASE 1: Both nodes are ALIVE

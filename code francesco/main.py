@@ -13,8 +13,8 @@ import mesh_generation
 # ---- Parameter to modify to change geometry -----
 # =================================================
 
-MESH_TYPE = 'l_shape'  # 'square_surface', 'cylinder' or 'l_shape', 'hole', 'gauss'
-FMM_TYPE = 'standard'              # 'standard for FMM of 'circ' for higher order FMM
+MESH_TYPE = 'hole'  # 'square_surface', 'cylinder' or 'l_shape', 'hole', 'gauss'
+FMM_TYPE = 'circ'              # 'standard for FMM of 'circ' for higher order FMM
 
 # -------------------------------------------------
 
@@ -24,7 +24,7 @@ SOURCE_THETA_DEG = 0    # angle in degrees: 0 = front of cylinder (x=R, y=0)
 SOURCE_Z     = 0.5    # height along the cylinder
 
 # For square_surface: source specified as (x, y)
-SOURCE_XY = np.array([0.2, 0.])
+SOURCE_XY = np.array([0.0, 0.0])
 
 RMAX = 2
 SOURCE_GAUSS = np.array([RMAX, 0, 0])
@@ -89,7 +89,7 @@ def main(mesh_type=MESH_TYPE, fmm_type=FMM_TYPE):
         source_coords = make_source_coords(mesh_type, R=R, H=H)
         mesh_generation.generate_cylinder_meshV2(N, R, H, current_dir)
     elif mesh_type == 'hole':
-        N = 20
+        N = 200
         L = 1
         R = 0.2
 
@@ -150,6 +150,7 @@ def main(mesh_type=MESH_TYPE, fmm_type=FMM_TYPE):
 
     elif mesh_type == 'hole':
         solver.Plot_Isolines(node_list, element_list, source = source_nodes[0].coords[0])
+        solver.Get_error_map_hole(node_list, source_nodes[0], element_list, 0.2)
 
     elif mesh_type == 'gauss':
         solver.Plot_Isolines_3D(node_list, element_list,
