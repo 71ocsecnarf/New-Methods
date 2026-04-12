@@ -377,11 +377,14 @@ def eikonal_sol_circ(node, node_virtual_source):
                     best_local_dist = tA_1d
                     collinear = consistent_update(node_a, node, normal, corner_a, SAME_LINE_TOL)
                     best_local_vs = corner_a if collinear else node_a
+                    
 
                 elif tB_1d < tA_1d and tB_1d < best_local_dist:
                     best_local_dist = tB_1d
                     collinear = consistent_update(node_b, node, normal, corner_b, SAME_LINE_TOL)
                     best_local_vs = corner_b if collinear else node_b
+
+                    
 
             # Commit this triangle's result to the global best
             if best_local_dist < dist:
@@ -392,14 +395,23 @@ def eikonal_sol_circ(node, node_virtual_source):
         # ------------------------------------------------------------------
         # CASE 2: Only node_a is ALIVE --> pure 1D update
         # ------------------------------------------------------------------
+        # CASE 2
         elif node_a.state == 'ALIVE':
             t_1d = node_a.dist + node.distance_to_other_node(node_a)
             if t_1d < dist:
-                dist = t_1d
+                dist     = t_1d
                 corner_a = node_virtual_source[node_a.idx]
-                # Collinearity check: is C on the same ray as the VS of A?
-                collinear = consistent_update(node_a, node, normal, corner_a, SAME_LINE_TOL)
-                best_node_vs = corner_a if collinear else node_a
+                # A node is a genuine diffraction point if and only if
+                # its own VS is itself -- meaning it was the first node
+                # reached after a wavefront bend, and reset the VS to itself.
+                # In all other cases, the VS of node_a is a previous corner
+                # or the original source, and should be propagated unchanged.
+                if corner_a is node_a:
+                    # node_a is a confirmed diffraction corner: it becomes the new VS
+                    best_node_vs = node_a
+                else:
+                    # node_a inherited its VS from upstream: propagate it
+                    best_node_vs = corner_a
 
         # ------------------------------------------------------------------
         # CASE 3: Only node_b is ALIVE --> pure 1D update
@@ -407,11 +419,20 @@ def eikonal_sol_circ(node, node_virtual_source):
         elif node_b.state == 'ALIVE':
             t_1d = node_b.dist + node.distance_to_other_node(node_b)
             if t_1d < dist:
-                dist = t_1d
+                dist     = t_1d
                 corner_b = node_virtual_source[node_b.idx]
-                collinear = consistent_update(node_b, node, normal, corner_b, SAME_LINE_TOL)
-                best_node_vs = corner_b if collinear else node_b
-
+                # A node is a genuine diffraction point if and only if
+                # its own VS is itself -- meaning it was the first node
+                # reached after a wavefront bend, and reset the VS to itself.
+                # In all other cases, the VS of node_a is a previous corner
+                # or the original source, and should be propagated unchanged.
+                if corner_b is node_b:
+                    # node_b is a confirmed diffraction corner: it becomes the new VS
+                    best_node_vs = node_b
+                else:
+                    # node_b inherited its VS from upstream: propagate it
+                    best_node_vs = corner_b
+                
     return dist, best_node_vs
 
 
