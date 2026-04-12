@@ -1,5 +1,4 @@
 from platform import node
-
 from matplotlib.pylab import normal
 import numpy as np
 import heapq
@@ -286,24 +285,9 @@ def eikonal_sol_circ(node, node_virtual_source):
             best_local_dist = dist
             best_local_vs   = best_node_vs
 
-            # ---- 1D fallback distances ----
-            tA_1d = d_A + node.distance_to_other_node(node_a)
-            tB_1d = d_B + node.distance_to_other_node(node_b)
 
-            # Choose the smaller 1D candidate and decide whether the wavefront
-            # is propagating straight (collinear with the virtual source) or
-            # bending at the ALIVE vertex (which then becomes the new VS).
-            if tA_1d <= tB_1d and tA_1d < best_local_dist:
-                best_local_dist = tA_1d
-                collinear = consistent_update(node_a, node, normal, SAME_LINE_TOL)
-                best_local_vs = corner_a if collinear else node_a
 
-            elif tB_1d < tA_1d and tB_1d < best_local_dist:
-                best_local_dist = tB_1d
-                collinear = consistent_update(node_b, node, normal, SAME_LINE_TOL)
-                best_local_vs = corner_b if collinear else node_b
-
-            # ---- 2D circular update ----
+           # ---- 2D circular update ----
             if corner_a is corner_b:
                 # Same virtual source for both A and B: standard circular update.
                 # The wavefront is a perfect circle centred on this shared source.
@@ -315,8 +299,9 @@ def eikonal_sol_circ(node, node_virtual_source):
             else:
                 # Different virtual sources: the wavefront has wrapped around a
                 # concave corner.  Use isCplus to select the consistent source.
-                #
-                # Semantics (matching the colleague's implementation):
+                vs_of_a = node_virtual_source[node_a.idx]  # confirmed VS of node_a
+                vs_of_b = node_virtual_source[node_b.idx]  # confirmed VS of node_b
+                # Semantics:
                 #   other_corner = the concave corner node (new virtual source),
                 #                  identified by having the SMALLER dist value
                 #                  (it is between the original source and C).
@@ -325,18 +310,16 @@ def eikonal_sol_circ(node, node_virtual_source):
                 #   mynode       = the ALIVE mesh vertex associated with
                 #                  other_corner (used as one end of the edge
                 #                  passed to compute_2d_eikonal).
-                if corner_b.dist < corner_a.dist:
-                    # corner_b is closer to the original source --> it is the
-                    # concave corner that re-emits the wave.
-                    other_corner = corner_b   # concave corner (new VS), smaller dist
-                    close_corner = corner_a   # previous VS, larger dist
-                    mynode       = node_b     # mesh vertex whose VS is other_corner
-                    mynode2      = node_a
-                else:
-                    other_corner = corner_a
-                    close_corner = corner_b
+                if vs_of_a.dist < vs_of_b.dist:
+                    other_corner = vs_of_a   # concave corner = VS of node_a
+                    close_corner = vs_of_b
                     mynode       = node_a
                     mynode2      = node_b
+                else:
+                    other_corner = vs_of_b   # concave corner = VS of node_b
+                    close_corner = vs_of_a
+                    mynode       = node_b
+                    mynode2      = node_a
 
                 # Build a local axis x_hat pointing from other_corner to
                 # close_corner, projected onto the surface plane.
@@ -379,10 +362,32 @@ def eikonal_sol_circ(node, node_virtual_source):
                             best_local_dist = t_2d
                             best_local_vs   = close_corner
 
+
+
+            # ---- 1D fallback updates - Only if 2D update fails ----
+            if best_local_dist == dist:
+                
+                tA_1d = d_A + node.distance_to_other_node(node_a)
+                tB_1d = d_B + node.distance_to_other_node(node_b)
+
+                 # Choose the smaller 1D candidate and decide whether the wavefront
+                # is propagating straight (collinear with the virtual source) or
+                # bending at the ALIVE vertex (which then becomes the new VS).
+                if tA_1d <= tB_1d and tA_1d < best_local_dist:
+                    best_local_dist = tA_1d
+                    collinear = consistent_update(node_a, node, normal, corner_a, SAME_LINE_TOL)
+                    best_local_vs = corner_a if collinear else node_a
+
+                elif tB_1d < tA_1d and tB_1d < best_local_dist:
+                    best_local_dist = tB_1d
+                    collinear = consistent_update(node_b, node, normal, corner_b, SAME_LINE_TOL)
+                    best_local_vs = corner_b if collinear else node_b
+
             # Commit this triangle's result to the global best
             if best_local_dist < dist:
                 dist         = best_local_dist
                 best_node_vs = best_local_vs
+
 
         # ------------------------------------------------------------------
         # CASE 2: Only node_a is ALIVE --> pure 1D update
@@ -393,7 +398,7 @@ def eikonal_sol_circ(node, node_virtual_source):
                 dist = t_1d
                 corner_a = node_virtual_source[node_a.idx]
                 # Collinearity check: is C on the same ray as the VS of A?
-                collinear = consistent_update(node_a, node, normal, SAME_LINE_TOL)
+                collinear = consistent_update(node_a, node, normal, corner_a, SAME_LINE_TOL)
                 best_node_vs = corner_a if collinear else node_a
 
         # ------------------------------------------------------------------
@@ -404,7 +409,7 @@ def eikonal_sol_circ(node, node_virtual_source):
             if t_1d < dist:
                 dist = t_1d
                 corner_b = node_virtual_source[node_b.idx]
-                collinear = consistent_update(node_b, node, normal, SAME_LINE_TOL)
+                collinear = consistent_update(node_b, node, normal, corner_b, SAME_LINE_TOL)
                 best_node_vs = corner_b if collinear else node_b
 
     return dist, best_node_vs
@@ -434,6 +439,13 @@ def compute_2d_eikonal(node_a, node_b, node_c, d_A_raw, d_B_raw, S_prime):
     # Distances from S' to A and B, measured in the local frame
     d_A = d_A_raw - S_prime_dist
     d_B = d_B_raw - S_prime_dist
+
+    if d_A < 0.0 or d_B < 0.0:
+        # The virtual source S' is farther from A or B than the current node C,
+        # which violates the upwind condition.  This can happen due to
+        # numerical errors or in non-convex geometries.  Reject this update.
+        print(f"Warning: Negative local distances d_A={d_A:.3e}, d_B={d_B:.3e} in compute_2d_eikonal. Rejecting update.")
+        return float('inf')
 
     # ====== STEP 1 ---> Local frame for the edge AB ====
     AB = node_b.coords - node_a.coords
@@ -470,7 +482,8 @@ def compute_2d_eikonal(node_a, node_b, node_c, d_A_raw, d_B_raw, S_prime):
     if sq_y_S < 0.0:
         return float('inf')
 
-    # S must be on the opposite side of AB from C (upwind convention)
+
+     # S must be on the opposite side of AB from C (upwind convention)
     sign_y_S = -np.sign(y_C)
     if sign_y_S == 0.0:
         sign_y_S = 1.0    # C exactly on AB: arbitrary but consistent choice
@@ -523,17 +536,17 @@ def store_virtual_source(node_1, node_2, S, edge_curvature):
 
 
 
-def consistent_update(node1, node2, normal, samelinetol = 1e-1):
+def consistent_update(node1, node2, normal, vs_node1, samelinetol = 1e-1):
     """
     It checks if the 1D update of the edge curvature is on the same line (i.e. the front is 
     moving along a boundary) or the update is not consistent, i.e the front has to cross a
     corner node. In the latter case the virtual source has to be re-initialized.
     """
-    if node1.virtual_source is None:
+    if vs_node1 is None:
         return True
     
     v1 = node2.coords - node1.coords
-    v2 = (node2.coords - node1.virtual_source.coords)
+    v2 = (node2.coords - vs_node1.coords)
     v2 = v2 - np.dot(v2, normal) * normal
                 
     n1 = np.linalg.norm(v1)
