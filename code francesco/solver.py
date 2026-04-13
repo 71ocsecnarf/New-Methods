@@ -333,64 +333,183 @@ def compute_err_hole(node_list, source_coord, L=1.0, R=0.2):
 
 def geodesic_hole(node_coords, source_coords, L=1.0, R=0.2):
     """
-    Exact geodesic distance on the square with hole domain.
-
+    Exact geodesic distance on the square-with-hole domain.
     The hole is a disk of radius R centered at (L/2, L/2).
-    The source is outside the hole.
-
-    If the straight line S->P intersects the hole, the geodesic must detour
-    around the hole. The exact distance can be computed by considering all
-    possible tangent points on the hole and taking the minimum path:
-        d = min_{tangent points T} [dist(S, T) + dist(T, P)]
-
-    Otherwise the Euclidean distance is exact.
+    If the straight segment S->P intersects the hole, the geodesic
+    detours around the hole via one of the two tangent paths.
+    We compute BOTH (clockwise and counter-clockwise) and return the minimum.
     """
-
-    # Supposing the hole is centered at (0,0)
     C_coords = np.array([L/2, L/2, 0.0])
 
-    # Determine the vectors starting from the center and pointing towards the 
-    # source S (source_coords) and the target P (node_coords)
     v_S = source_coords - C_coords
     v_P = node_coords   - C_coords
 
-    # Compute their norms, i.e. the distances from the center C
-    d_S = np.linalg.norm(v_S)
-    d_P = np.linalg.norm(v_P)
-    # Avoid any problems due to mesh not properly corrected
-    d_S = max(d_S, R)
-    d_P = max(d_P, R)
+    d_S = max(np.linalg.norm(v_S), R)
+    d_P = max(np.linalg.norm(v_P), R)
 
-    # Compute the angles from the vectors to the tangency points
+    # Half-angle of the tangent cone from S and from P
     alpha_S = np.arccos(np.clip(R / d_S, -1.0, 1.0))
     alpha_P = np.arccos(np.clip(R / d_P, -1.0, 1.0))
 
-    # Lowest angle separating the vectors v_S and v_P
-    """
-    dot_prod = np.dot(v_S, v_P) / (d_S * d_P)
-    phi = np.arccos(np.clip(dot_prod, -1.0, 1.0))   
-    # Dot Product can cause problems of signs
-    """
-    # Use atan2 to get the signed angle and then take absolute value for the separation
-    phi = abs(np.arctan2(v_S[1], v_S[0]) - np.arctan2(v_P[1], v_P[0]))
-    if phi > np.pi: 
-        # The absolute difference must be always [0 pi]
-        phi = 2 * np.pi - phi
+    # Tangent lengths from S and P to the circle
+    t_S = np.sqrt(max(d_S**2 - R**2, 0.0))
+    t_P = np.sqrt(max(d_P**2 - R**2, 0.0))
 
+    # Signed angles of v_S and v_P
+    angle_S = np.arctan2(v_S[1], v_S[0])
+    angle_P = np.arctan2(v_P[1], v_P[0])
 
-    # Visibility condition
-    if phi <= alpha_S + alpha_P:
-        # P is directly visible from S --> Euclidean distance 
+    # Signed angular difference (from S to P)
+    dphi = angle_P - angle_S
+    # Wrap to (-pi, pi]
+    dphi = (dphi + np.pi) % (2 * np.pi) - np.pi
+
+    # Visibility condition: |dphi| < alpha_S + alpha_P  means direct line-of-sight
+    if abs(dphi) <= alpha_S + alpha_P:
         return np.linalg.norm(node_coords - source_coords)
-    
+
+    # Two detour paths: CCW (positive arc) and CW (negative arc)
+    # Arc angle for CCW path (going the short way in the positive direction)
+    if dphi > 0:
+        arc_CCW = dphi - (alpha_S + alpha_P)
+        arc_CW  = (2 * np.pi - dphi) - (alpha_S + alpha_P)
     else:
-        # P is not visible from S --> geodesic goes through the tangents to the hole
-        t_S = np.sqrt(d_S**2 - R**2)
-        t_P = np.sqrt(d_P**2 - R**2)
-        arc_angle = phi - (alpha_S + alpha_P)
-        return t_S + t_P + R * arc_angle
+        arc_CW  = (-dphi) - (alpha_S + alpha_P)
+        arc_CCW = (2 * np.pi - (-dphi)) - (alpha_S + alpha_P)
+
+    # Both arcs must be non-negative (they represent a real detour)
+    arc_CCW = max(arc_CCW, 0.0)
+    arc_CW  = max(arc_CW,  0.0)
+
+    d_CCW = t_S + t_P + R * arc_CCW
+    d_CW  = t_S + t_P + R * arc_CW
+
+    return min(d_CCW, d_CW)
 
     
+
+
+# =============================================
+# ------- Point-wise convergence tracking -----
+# =============================================
+
+def Find_Closest_Node(target_xy, node_list):
+    """
+    Find the mesh node closest to a given 2D target point.
+
+    The search is done in the (x, y) plane only (ignoring z), which is correct
+    for flat 2D geometries (square_surface, l_shape, hole).
+
+    Parameters
+    ----------
+    target_xy : array-like of shape (2,)
+        The (x, y) coordinates of the target point.
+    node_list : array of NODE objects
+        All mesh nodes.
+
+    Returns
+    -------
+    closest_node : NODE
+        The mesh node whose (x, y) coordinates are closest to target_xy.
+    snap_distance : float
+        The Euclidean distance between target_xy and the snapped node.
+    """
+    target = np.array([target_xy[0], target_xy[1]])
+
+    # Build a (N_nodes, 2) array of (x, y) coordinates for vectorised search.
+    # node.coords is a 3-element array [x, y, z]; we take only the first two.
+    xy_coords = np.array([n.coords[:2] for n in node_list])
+
+    # np.linalg.norm with axis=1 computes the 2D distance from target
+    # to every node in one vectorised operation (no Python loop needed).
+    distances = np.linalg.norm(xy_coords - target, axis=1)
+
+    # np.argmin returns the index of the minimum value in the array
+    idx = np.argmin(distances)
+
+    return node_list[idx], distances[idx]
+
+
+def Track_Point_Errors(probe_points, node_list, mesh_type, source_coord, L=1.0, R=0.2):
+    """
+    Compute the pointwise relative error at a set of probe points after one FMM run.
+
+    For each probe point, the closest mesh node is found (snap), the exact
+    geodesic distance is evaluated, and the relative error is computed as:
+        rel_err = |T_FMM - T_exact| / T_exact
+
+    This function is meant to be called once after fmm_algorithm() or
+    fmm_algorithm_circ() has already populated node.dist for all nodes.
+
+    Parameters
+    ----------
+    probe_points : list of array-like, each of shape (2,)
+        The (x, y) coordinates of the points to track.
+        Example: [np.array([1.0, 1.0]), np.array([0.8, 1.0])]
+    node_list    : array of NODE objects
+        All mesh nodes (with .dist already filled by the FMM).
+    mesh_type    : str
+        One of 'square_surface', 'l_shape', 'hole'.
+        Used to select the correct exact geodesic formula.
+    source_coord : array-like of shape (3,)
+        The (x, y, z) coordinates of the snapped source node.
+    L : float
+        Domain side length (used by l_shape and hole).
+    R : float
+        Hole radius (used by hole only).
+
+    Returns
+    -------
+    rel_errors : list of float
+        Relative error at each probe point, in the same order as probe_points.
+        Returns 0.0 for a point if T_exact is too small (avoids division by zero).
+    snapped_coords : list of np.ndarray
+        The actual (x, y, z) coordinates of the snapped nodes,
+        useful for reporting how far the snap was.
+    """
+    rel_errors     = []
+    snapped_coords = []
+
+    for pt in probe_points:
+        # --- Step 1: snap to the closest mesh node ---
+        node, snap_dist = Find_Closest_Node(pt, node_list)
+        snapped_coords.append(node.coords.copy())
+
+        # --- Step 2: FMM value at the snapped node ---
+        T_fmm = node.dist
+        if T_fmm == float('inf'):
+            # Node was never reached by the FMM (should not happen on a connected mesh)
+            rel_errors.append(0.0)
+            continue
+
+        # --- Step 3: exact geodesic distance at the snapped node ---
+        # We pass node.coords (3D) to the geodesic functions because they
+        # internally use .coords[0] and .coords[1] (x and y).
+        if mesh_type == 'square_surface':
+            T_exact = np.linalg.norm(node.coords - source_coord)
+
+        elif mesh_type == 'l_shape':
+            T_exact = geodesic_lshape(node.coords, source_coord, L)
+
+        elif mesh_type == 'hole':
+            T_exact = geodesic_hole(node.coords, source_coord, L, R)
+
+        else:
+            # Cylinder and l_cylinder are 3D geometries; point tracking
+            # is not supported here. Return 0.0 as a safe fallback.
+            rel_errors.append(0.0)
+            continue
+
+        # --- Step 4: relative error ---
+        # Guard against division by zero when the probe point is the source itself
+        if T_exact < 1e-14:
+            rel_errors.append(0.0)
+        else:
+            rel_errors.append(abs(T_fmm - T_exact) / T_exact)
+
+    return rel_errors, snapped_coords
+
+
 
 # =============================================
 # ------------------- Plots -------------------
@@ -727,7 +846,7 @@ def plot_convergence(h_values, errors_l2_fmm, errors_l2_circ, title, save_name):
 
 
 
-def Plot_Error_Field(node_list, element_list, mesh_type, true_source, R=0.5, L=1.0):
+def Plot_Error_Field(node_list, element_list, mesh_type, true_source, L=1.0, R=0.5):
     import matplotlib.cm as cm
     from matplotlib.colors import Normalize
     from matplotlib.cm import ScalarMappable
@@ -787,3 +906,138 @@ def Plot_Error_Field(node_list, element_list, mesh_type, true_source, R=0.5, L=1
         plt.ylabel("Y")
 
 
+
+
+
+def Plot_Point_Convergence(h_values, point_errors_fmm, point_errors_circ,
+                           probe_points, title, save_name):
+    """
+    Plot the pointwise relative error convergence for HFMM only, on a log-log scale.
+
+    One curve is drawn per probe point for HFMM (circular wavefront FMM).
+    Reference lines O(h) and O(h^2) are also shown.
+
+    Parameters
+    ----------
+    h_values : list of float
+        Mesh sizes h, one per refinement level (coarse to fine).
+    point_errors_fmm : list of list of float
+        Not used in the plot. Kept in the signature for compatibility
+        with the call in accuracy_plot.py.
+    point_errors_circ : list of list of float
+        Outer list: one entry per refinement level.
+        Inner list: one relative error per probe point.
+        point_errors_circ[i][j] = relative error at probe_points[j] for h=h_values[i].
+    probe_points : list of array-like
+        The (x, y) probe point coordinates, used for legend labels.
+    title : str
+        Plot title.
+    save_name : str
+        Filename for saving the figure (e.g. 'ConvStudyLshape.pdf').
+    """
+    # Reverse so that h goes from coarse to fine (large h to small h) on x-axis,
+    # consistent with the global convergence plot in plot_convergence().
+    h_arr = np.array(h_values[::-1])
+
+    # One distinct colour per probe point
+    colors = plt.cm.tab10(np.linspace(0, 0.5, len(probe_points)))
+
+    plt.figure(figsize=(8, 6))
+
+    for j, pt in enumerate(probe_points):
+        # Extract the error at probe point j across all refinement levels,
+        # then reverse to match the reversed h array.
+        errs_circ = np.array([point_errors_circ[i][j] for i in range(len(h_values))])[::-1]
+
+        label_circ = f'HFMM @ ({pt[0]:.1f}, {pt[1]:.1f})'
+
+        plt.loglog(h_arr, errs_circ, '-o', color=colors[j], label=label_circ)
+
+    # Reference slopes
+    plt.loglog(h_arr, h_arr,    '--', color='gray',  linewidth=1.5, label='O(h)')
+    plt.loglog(h_arr, h_arr**2, '--', color='black', linewidth=1.5, label='O(h²)')
+
+    plt.xlabel('h (mesh size)')
+    plt.ylabel('Relative error  |T_HFMM - T_exact| / T_exact')
+    plt.title(title + ' — HFMM pointwise convergence')
+    plt.legend(fontsize=8)
+    plt.grid(True, which='both')
+    plt.gca().invert_xaxis()
+    plt.tight_layout()
+
+    # Save under a distinct name to avoid overwriting the global convergence plot
+    point_save_name = save_name.replace('.pdf', '_points.pdf')
+    plt.savefig(point_save_name)
+
+
+
+
+"""
+
+def Plot_Point_Convergence(h_values, point_errors_fmm, point_errors_circ,
+                           probe_points, title, save_name):
+
+    Plot the pointwise relative error convergence on a log-log scale.
+
+    One curve is drawn per probe point, for both FMM and HFMM, giving
+    2 * len(probe_points) curves in total.  Reference lines O(h) and O(h^2)
+    are also shown.
+
+    Parameters
+    ----------
+    h_values : list of float
+        Mesh sizes h, one per refinement level, in the order they were computed
+        (coarse to fine, i.e. decreasing h).
+    point_errors_fmm : list of list of float
+        Outer list: one entry per refinement level.
+        Inner list: one relative error per probe point.
+        So point_errors_fmm[i][j] = relative error at probe_points[j] for h=h_values[i].
+    point_errors_circ : list of list of float
+        Same structure as point_errors_fmm, but for HFMM (circular wavefront).
+    probe_points : list of array-like
+        The (x, y) probe point coordinates, used only for legend labels.
+    title : str
+        Plot title.
+    save_name : str
+        Filename for saving the figure (e.g. 'PointConvSquare.pdf').
+
+    # Reverse the lists so that h goes from coarse to fine on the x-axis,
+    # consistent with the global convergence plot in plot_convergence().
+    h_arr = np.array(h_values[::-1])
+
+    # Define one colour per probe point so FMM and HFMM share the same colour
+    # but are distinguished by line style (solid vs dashed).
+    colors = plt.cm.tab10(np.linspace(0, 0.5, len(probe_points)))
+
+    plt.figure(figsize=(8, 6))
+
+    for j, pt in enumerate(probe_points):
+        # Extract the error at probe point j across all refinement levels,
+        # then reverse to match the reversed h array.
+        errs_fmm  = np.array([point_errors_fmm[i][j]  for i in range(len(h_values))])[::-1]
+        errs_circ = np.array([point_errors_circ[i][j] for i in range(len(h_values))])[::-1]
+
+        label_fmm  = f'FMM  @ ({pt[0]:.1f},{pt[1]:.1f})'
+        label_circ = f'HFMM @ ({pt[0]:.1f},{pt[1]:.1f})'
+
+        # Solid line for standard FMM, dashed for HFMM; same colour per point
+        plt.loglog(h_arr, errs_fmm,  '-o',  color=colors[j], label=label_fmm)
+        plt.loglog(h_arr, errs_circ, '--o', color=colors[j], label=label_circ)
+
+    # Reference slopes
+    plt.loglog(h_arr, h_arr,    ':', color='gray',  linewidth=1.5, label='O(h)')
+    plt.loglog(h_arr, h_arr**2, ':', color='black', linewidth=1.5, label='O(h²)')
+
+    plt.xlabel('h (mesh size)')
+    plt.ylabel('Relative error  |T_FMM - T_exact| / T_exact')
+    plt.title(title + ' — pointwise')
+    plt.legend(fontsize=7)
+    plt.grid(True, which='both')
+    plt.gca().invert_xaxis()
+    plt.tight_layout()
+
+    # Build a separate save name for this plot to avoid overwriting
+    # the global convergence figure saved by plot_convergence().
+    point_save_name = save_name.replace('.pdf', '_points.pdf')
+    plt.savefig(point_save_name)
+"""

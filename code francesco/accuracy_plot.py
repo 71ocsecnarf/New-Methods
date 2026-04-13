@@ -22,7 +22,14 @@ SOURCE_THETA_DEG = 90    # angle in degrees: 0 = front of cylinder (x=R, y=0)
 SOURCE_Z         = 0.1   # height along the cylinder
 
 # For square_surface and hole: source specified as (x, y)
-SOURCE_XY = np.array([0.2, 0.0])
+SOURCE_XY = np.array([0., 0.0])
+
+# Probe points for error evaluation
+PROBE_POINTS = [                                          
+    np.array([1.0, 1.0]),
+    np.array([0.8, 1.0]),
+    np.array([1.0, 0.8]),
+]
 
 # ------------------------------------------------------------
 
@@ -140,6 +147,8 @@ def main(mesh_type=MESH_TYPE, N_values=N_VALUES):
     h_values       = []
     errors_fmm     = [];  errors_l2_fmm  = []
     errors_circ    = [];  errors_l2_circ = []
+    point_errors_fmm_all  = []   
+    point_errors_circ_all = []   
 
     # ----> C - Loop over N ----
     for i, N in enumerate(N_values):
@@ -181,6 +190,15 @@ def main(mesh_type=MESH_TYPE, N_values=N_VALUES):
         errors_fmm.append(err_fmm)
         errors_l2_fmm.append(e_l2_fmm)
 
+        # Track pointwise errors for standard FMM              
+        if mesh_type not in ('cylinder',):                     
+            pt_errs_fmm, _ = solver.Track_Point_Errors(       
+                PROBE_POINTS, node_list, mesh_type,            
+                snapped_source,                                
+                L=cfg['L_val'] if cfg['L_val'] else 1.0,      
+                R=cfg['R_val'] if cfg['R_val'] else 0.2)       
+            point_errors_fmm_all.append(pt_errs_fmm)          
+
         # 5b ---> Circular FMM
         solver.Reset_Node_State(node_list)
         true_source, source_nodes = solver.Innit_Origin_Point(
@@ -199,6 +217,22 @@ def main(mesh_type=MESH_TYPE, N_values=N_VALUES):
         errors_circ.append(err_circ)
         errors_l2_circ.append(e_l2_circ)
 
+         # Track pointwise errors for HFMM                      
+        if mesh_type not in ('cylinder',):                     
+            pt_errs_circ, snapped = solver.Track_Point_Errors( 
+                PROBE_POINTS, node_list, mesh_type,            
+                snapped_source,                                
+                L=cfg['L_val'] if cfg['L_val'] else 1.0,      
+                R=cfg['R_val'] if cfg['R_val'] else 0.2)       
+            point_errors_circ_all.append(pt_errs_circ)        
+
+            # Print snap info only at the first iteration to avoid spam
+            if i == 0:                                         
+                print("\nProbe point snap report (first mesh only):") 
+                for k, pt in enumerate(PROBE_POINTS):         
+                    print(f"  ({pt[0]:.2f},{pt[1]:.2f}) --> "
+                          f"snapped to {snapped[k][:2]}")     
+
         # ----> Plot Error Field for the finest mesh (last iteration) ----
         if i == len(N_values) - 1:
             print("\nGenerating error field plot for the finest mesh...")
@@ -214,6 +248,17 @@ def main(mesh_type=MESH_TYPE, N_values=N_VALUES):
     solver.plot_convergence(h_values, errors_l2_fmm, errors_l2_circ,
                             cfg['plot_title'], cfg['save_name'])
 
+
+    # Pointwise convergence plot (2D geometries only)        
+    if mesh_type not in ('cylinder',) and point_errors_fmm_all:  
+        solver.Plot_Point_Convergence(                        
+            h_values,                                        
+            point_errors_fmm_all,                            
+            point_errors_circ_all,                           
+            PROBE_POINTS,                                     
+            cfg['plot_title'],                               
+            cfg['save_name'])                                
+        
     # Show both the log-log plot and the spatial error field simultaneously
     plt.show()
 
