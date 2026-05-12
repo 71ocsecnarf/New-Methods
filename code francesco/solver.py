@@ -225,8 +225,18 @@ def compute_err_l_shape(node_list, source_coord, L=1.0):
             continue
             
         d_exact = geodesic_lshape(node.coords, source_coord, L)
-        err_i = abs(d_exact - node.dist)
+        err_i = (d_exact - node.dist)
+        """
+                # DEBUG
+        if err_i < -1e-6:  # errore negativo significativo
+            print(f"OVERESTIMATE: node=({node.coords[0]:.4f},{node.coords[1]:.4f})"
+                  f" | d_exact={d_exact:.6f} | d_fmm={node.dist:.6f}"
+                  f" | err={err_i:.2e}"
+                  f" | crosses={segment_crosses_missing_quadrant(source_coord, node.coords, L)}")
+        
+        """
         errors.append(err_i)
+        
 
         if d_exact > 1e-14:
             errors_rel.append(err_i / d_exact)
@@ -317,7 +327,7 @@ def compute_err_hole(node_list, source_coord, L=1.0, R=0.2):
             continue
             
         d_exact = geodesic_hole(node.coords, source_coord, L, R)
-        err_i = abs(d_exact - node.dist)
+        err_i = (d_exact - node.dist)
         errors.append(err_i)
 
         if d_exact > 1e-14:
@@ -386,7 +396,158 @@ def geodesic_hole(node_coords, source_coords, L=1.0, R=0.2):
 
     return min(d_CCW, d_CW)
 
-    
+
+
+
+# =============================================
+# ------- L-cylinder geodesic error -----------
+# =============================================
+
+def compute_err_l_cylinder(node_list, source_coord, R, H):
+    """
+    Compute geodesic errors for the L-shaped half-cylinder surface.
+
+    Returns: (max_error, max_relative_error, pointwise_errors_array, L2_error)
+    Same signature as compute_err_l_shape so it can be used identically in
+    accuracy_plot.py and Plot_Error_Field.
+    """
+    errors     = []
+    errors_rel = []
+
+    for node in node_list:
+        if node.dist == float('inf'):
+            errors.append(0.0)
+            continue
+
+        d_exact = geodesic_l_cylinder(node.coords, source_coord, R, H)
+        err_i   = d_exact - node.dist
+        errors.append(err_i)
+
+        if d_exact > 1e-14:
+            errors_rel.append(err_i / d_exact)
+
+    err     = np.max(errors)     if errors else 0.0
+    err_rel = np.max(errors_rel) if errors_rel else 0.0
+    e_l2    = np.sqrt(np.mean(np.array(errors) ** 2)) if errors else 0.0
+
+    return err, err_rel, np.array(errors), e_l2
+
+
+def geodesic_l_cylinder(node_coords, source_coords, R, H):
+    """
+    Exact geodesic distance on the L-shaped half-cylinder lateral surface.
+
+    KEY IDEA -- isometric unrolling:
+        A cylinder has zero Gaussian curvature, so its surface is locally
+        isometric to the plane.  The unrolling map
+
+            phi : (x, y, z)  -->  (s, z)   with  s = R * arctan2(y, x)
+
+        preserves all lengths.  Therefore every geodesic on the cylinder
+        corresponds to a straight line in the unrolled 2D domain, and the
+        geodesic LENGTH equals the Euclidean distance in that 2D domain.
+
+    UNROLLED DOMAIN:
+        Horizontal axis: s = R * theta,  theta in [0, pi]
+                         s in [0, pi*R]
+                         s=0      <-> theta=0   <-> ( R,  0, z)  right edge
+                         s=pi*R/2 <-> theta=pi/2 <-> ( 0,  R, z)  front
+                         s=pi*R   <-> theta=pi   <-> (-R,  0, z)  left edge
+        Vertical axis: z in [0, H]
+
+        Bottom arm: s in [0, pi*R],   z in [0,   H/2]
+        Left  arm:  s in [pi*R/2, pi*R], z in [H/2, H]
+        Missing quadrant: s in [0, pi*R/2], z in [H/2, H]
+        Concave corner: (s_c, z_c) = (pi*R/2, H/2)
+
+    GEODESIC RULE (identical structure to geodesic_lshape):
+        - Compute unrolled 2D coordinates S' and P' of source and target.
+        - If the straight segment S'->P' does NOT cross the boundary of the
+          missing quadrant: geodesic = Euclidean distance ||S' - P'||.
+        - If it DOES cross: the geodesic must detour through the concave
+          corner C' = (pi*R/2, H/2):
+              d = ||S' - C'|| + ||C' - P'||
+
+    NOTE on theta convention:
+        arctan2(y, x) returns values in (-pi, pi].  For our domain
+        theta in [0, pi] (the front half of the cylinder, y >= 0), this
+        gives values in [0, pi] -- no wrap-around needed, unlike the full
+        cylinder case in compute_err_cylinder.
+
+    Parameters
+    ----------
+    node_coords   : array of shape (3,) -- 3D coords of the target node
+    source_coords : array of shape (3,) -- 3D coords of the snapped source
+    R             : float -- cylinder radius
+    H             : float -- cylinder height
+
+    Returns
+    -------
+    d : float -- exact geodesic distance
+    """
+    # -- Unroll source and target to 2D --
+    # theta = arctan2(y, x) is in [0, pi] for the front half (y >= 0)
+    theta_S = np.arctan2(source_coords[1], source_coords[0])
+    theta_P = np.arctan2(node_coords[1],   node_coords[0])
+
+    S2 = np.array([R * theta_S, source_coords[2]])   # (s_S, z_S)
+    P2 = np.array([R * theta_P, node_coords[2]])     # (s_P, z_P)
+
+    # -- Concave corner in 2D --
+    # theta=pi/2 -> s = R*pi/2;  z = H/2
+    s_corner = R * np.pi / 2.0
+    C2 = np.array([s_corner, H / 2.0])
+
+    # -- Check if the direct segment S'->P' crosses the missing quadrant --
+    # Missing quadrant in 2D: s in [0, pi*R/2], z in [H/2, H]
+    # Its interior boundary consists of two edges:
+    #   Horizontal: z = H/2,  s in [0,     pi*R/2]
+    #   Vertical:   s = pi*R/2, z in [H/2, H     ]
+    if _segment_crosses_missing_quadrant_2d(S2, P2, s_corner, H):
+        d_via_corner = (np.linalg.norm(S2 - C2) + np.linalg.norm(P2 - C2))
+        return d_via_corner
+
+    return np.linalg.norm(P2 - S2)
+
+
+def _segment_crosses_missing_quadrant_2d(S, P, s_corner, H):
+    """
+    Check whether the 2D segment S->P crosses the interior boundary of the
+    missing quadrant  {s in [0, s_corner], z in [H/2, H]}.
+
+    The two interior boundary edges are:
+      - Horizontal edge: z = H/2,     s in [0, s_corner]
+      - Vertical edge:   s = s_corner, z in [H/2, H    ]
+
+    A crossing on either edge means the straight path enters the missing
+    quadrant and the geodesic must detour via the concave corner.
+
+    This is the direct 2D analogue of segment_crosses_missing_quadrant
+    used for the flat L-shape.
+    """
+    s_S, z_S = S[0], S[1]
+    s_P, z_P = P[0], P[1]
+    ds = s_P - s_S
+    dz = z_P - z_S
+    z_half = H / 2.0
+
+    # -- Horizontal edge: z = H/2,  s in [0, s_corner] --
+    if abs(dz) > 1e-14:
+        t = (z_half - z_S) / dz        # t in (0,1) for a proper interior crossing
+        if 0.0 < t < 1.0:
+            s_int = s_S + t * ds
+            if 0.0 <= s_int <= s_corner:
+                return True
+
+    # -- Vertical edge: s = s_corner,  z in [H/2, H] --
+    if abs(ds) > 1e-14:
+        t = (s_corner - s_S) / ds
+        if 0.0 < t < 1.0:
+            z_int = z_S + t * dz
+            if z_half <= z_int <= H:
+                return True
+
+    return False
 
 
 # =============================================
@@ -864,13 +1025,15 @@ def Plot_Error_Field(node_list, element_list, mesh_type, true_source, L=1.0, R=0
     elif mesh_type == 'l_shape':
         _, _, errors, _ = compute_err_l_shape(node_list, true_source, L)
     elif mesh_type == 'hole':
-        # Passiamo R correttamente, sia che sia 0.2 o il default
         _, _, errors, _ = compute_err_hole(node_list, true_source, L, R)
+    elif mesh_type == 'l_cylinder':
+        _, _, errors, _ = compute_err_l_cylinder(node_list, true_source, R, L)
+        # NOTE: L is repurposed as H (cylinder height) when called for l_cylinder
         
     triangles = np.array([[n.idx for n in e.nodes] for e in element_list])
     
-    # --- 3D PLOT for Cylinder ---
-    if mesh_type == 'cylinder':
+    # --- 3D PLOT for Cylinder and L-cylinder ---
+    if mesh_type in ('cylinder', 'l_cylinder'):
         fig = plt.figure(figsize=(10, 8))
         ax = fig.add_subplot(111, projection='3d')
         
@@ -896,7 +1059,7 @@ def Plot_Error_Field(node_list, element_list, mesh_type, true_source, L=1.0, R=0
         plt.figure(figsize=(8, 6))
         plt.gca().set_aspect('equal')
         
-        cntr = plt.tricontourf(x, y, triangles, errors, levels=40, cmap="inferno")
+        cntr = plt.tricontourf(x, y, triangles, errors, levels=40, cmap="viridis")
         plt.colorbar(cntr, label="Absolute Error")
         
         plt.triplot(x, y, triangles, color='black', alpha=0.1, linewidth=0.5)

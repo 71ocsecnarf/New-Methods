@@ -1,6 +1,6 @@
 from platform import node
 
-from matplotlib.pylab import normal
+from matplotlib.pylab import normal, rint
 import numpy as np
 import heapq
 import matplotlib.pyplot as plt
@@ -252,7 +252,7 @@ def eikonal_sol_circ(node, node_virtual_source):
     best_node_vs: NODE  -- virtual source associated with that distance
     """
 
-    SAME_LINE_TOL = 1e-1   # Cross-product threshold for collinearity check
+    SAME_LINE_TOL = 1.15e-1   # Cross-product threshold for collinearity check
 
     dist         = float('inf')
     best_node_vs = node_virtual_source.get(node.idx)  # fallback: keep current VS
@@ -308,81 +308,75 @@ def eikonal_sol_circ(node, node_virtual_source):
                 # Same virtual source for both A and B: standard circular update.
                 # The wavefront is a perfect circle centred on this shared source.
                 t_2d = compute_2d_eikonal(node_a, node_b, node, d_A, d_B, corner_a)
+                
                 if t_2d < best_local_dist:
                     best_local_dist = t_2d
                     best_local_vs   = corner_a
 
             else:
-                # Different virtual sources: the wavefront has wrapped around a
-                # concave corner.  Use isCplus to select the consistent source.
-                #
-                # Semantics (matching the colleague's implementation):
-                #   other_corner = the concave corner node (new virtual source),
-                #                  identified by having the SMALLER dist value
-                #                  (it is between the original source and C).
-                #   close_corner = the original / previous virtual source,
-                #                  which has the LARGER dist value.
-                #   mynode       = the ALIVE mesh vertex associated with
-                #                  other_corner (used as one end of the edge
-                #                  passed to compute_2d_eikonal).
-                if corner_b.dist < corner_a.dist:
-                    # corner_b is closer to the original source --> it is the
-                    # concave corner that re-emits the wave.
-                    other_corner = corner_b   # concave corner (new VS), smaller dist
-                    close_corner = corner_a   # previous VS, larger dist
-                    mynode       = node_b     # mesh vertex whose VS is other_corner
-                    mynode2      = node_a
+                if node_a.dist > node_b.dist:
+                    node_vs = node_a
+                    vs = corner_a
+                    node_s = node_b
+                    s = corner_b
                 else:
-                    other_corner = corner_a
-                    close_corner = corner_b
-                    mynode       = node_a
-                    mynode2      = node_b
+                    node_vs = node_b
+                    vs = corner_b
+                    node_s = node_a
+                    s = corner_a
+                
+                v = vs.coords - s.coords
+                v_norm = np.linalg.norm(v)
+                if v_norm > 1e-14:
+                    v = v / v_norm
 
-                # Build a local axis x_hat pointing from other_corner to
-                # close_corner, projected onto the surface plane.
-                x_hat = close_corner.coords - other_corner.coords
-                x_hat = x_hat - np.dot(x_hat, normal) * normal
-                axis_len = np.linalg.norm(x_hat)
+                CS = node.coords - vs.coords
+                CS_norm = np.linalg.norm(CS)
+                if CS_norm > 1e-14:
+                    CS = CS / CS_norm
+                
+                node_vs_vec = node_vs.coords - vs.coords
+                n_vs_norm = np.linalg.norm(node_vs_vec)
+                if n_vs_norm > 1e-14:
+                    node_vs_vec = node_vs_vec / n_vs_norm
 
-                if axis_len > 1e-14:
-                    x_hat = x_hat / axis_len
-                    y_hat = np.cross(normal, x_hat)
-                    y_hat = y_hat / np.linalg.norm(y_hat)
+                isMinus = np.dot(np.cross(v, node_vs_vec), np.cross(v, CS)) >= -1e-10
 
-                    # Project (C - other_corner) and (mynode - other_corner)
-                    # onto y_hat to classify which side of the axis they are on.
-                    vec_C  = (node.coords  - other_corner.coords)
-                    vec_C  = vec_C  - np.dot(vec_C,  normal) * normal
-                    vec_mn = (mynode.coords - other_corner.coords)
-                    vec_mn = vec_mn - np.dot(vec_mn, normal) * normal
+                if isMinus:
+                    t_2d = compute_2d_eikonal(node_a, node_b, node, node_a.dist, node_b.dist, vs)
+                    if t_2d < best_local_dist:
+                        best_local_dist = t_2d
+                        best_local_vs = vs
+                
+                else: 
+                    t_2d = compute_2d_eikonal(node_a, node_b, node, node_a.dist, node_b.dist, s)
+                    if t_2d < best_local_dist:
+                        best_local_dist = t_2d
+                        best_local_vs = s
+            
+            node_xy = node.coords[:2]
+            is_problem = (node_xy[0] > 0.5 and node_xy[1] > 0.5)  # zona con errori
+            if is_problem and best_local_dist < dist:
+                winner = "2D_same" if (corner_a is corner_b and best_local_dist == t_2d) else \
+                 "1D_tA"   if best_local_dist == tA_1d else \
+                 "1D_tB"   if best_local_dist == tB_1d else \
+                 "2D_diff" if best_local_dist == t_2d else "unknown"
+                print(f"node=({node_xy[0]:.3f},{node_xy[1]:.3f}) | "
+                    f"winner={winner} | "
+                    f"same_vs={corner_a is corner_b} | "
+                    f"dist={best_local_dist:.6f}")
 
-                    c_side  = np.dot(vec_C,  y_hat)
-                    mn_side = np.dot(vec_mn, y_hat)
-
-                    # isCplus: C is on the SAME side as mynode relative to the
-                    # corner axis --> use other_corner (concave corner) as VS.
-                    # isCminus: C is on the OPPOSITE side --> use close_corner.
-                    
-                    #isCplus = (c_side >= 0.0) and (mn_side > 0.0)
-                    isCplus = (c_side * mn_side >= 0.0) 
-
-                    if isCplus:
-                        t_2d = compute_2d_eikonal(mynode, mynode2, node,
-                                                  mynode.dist, mynode2.dist,
-                                                  other_corner)
-                        if t_2d < best_local_dist:
-                            best_local_dist = t_2d
-                            best_local_vs   = other_corner
-                    else:
-                        t_2d = compute_2d_eikonal(mynode, mynode2, node,
-                                                  mynode.dist, mynode2.dist,
-                                                  close_corner)
-                        if t_2d < best_local_dist:
-                            best_local_dist = t_2d
-                            best_local_vs   = close_corner
 
             # Commit this triangle's result to the global best
             if best_local_dist < dist:
+                # DEBUG: controlla se la sorgente virtuale è sensata
+                if best_node_vs is not None:
+                    d_vs_to_node = np.linalg.norm(node.coords - best_node_vs.coords)
+                    if best_local_dist < d_vs_to_node - 1e-10:
+                        print(f"INCONSISTENT VS: node={node.coords[:2]} "
+                        f"| dist={best_local_dist:.6f} "
+                        f"| |node-VS|={d_vs_to_node:.6f} "
+                        f"| VS={best_node_vs.coords[:2]}")
                 dist         = best_local_dist
                 best_node_vs = best_local_vs
 
@@ -437,6 +431,17 @@ def compute_2d_eikonal(node_a, node_b, node_c, d_A_raw, d_B_raw, S_prime):
     d_A = d_A_raw - S_prime_dist
     d_B = d_B_raw - S_prime_dist
 
+    # DEBUG: controlla la consistenza geometrica della sorgente virtuale
+    if S_prime is not None and S_prime.dist > 0:
+        true_dist_A = np.linalg.norm(node_a.coords - S_prime.coords)
+        true_dist_B = np.linalg.norm(node_b.coords - S_prime.coords)
+        err_A = abs(d_A - true_dist_A)
+        err_B = abs(d_B - true_dist_B)
+        if err_A > 1e-4 or err_B > 1e-4:
+            print(f"VS_MISMATCH: d_A={d_A:.6f} vs |A-VS|={true_dist_A:.6f} (err={err_A:.2e})"
+                  f" | d_B={d_B:.6f} vs |B-VS|={true_dist_B:.6f} (err={err_B:.2e})"
+                  f" | VS={S_prime.coords[:2]}")
+    
     if d_A < 0.0 or d_B < 0.0:
         # The virtual source S' is farther from A or B than the current node C,
         # which violates the upwind condition.  This can happen due to

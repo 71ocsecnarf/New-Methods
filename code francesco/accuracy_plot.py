@@ -13,8 +13,13 @@ import mesh_generation
 # ------------------------ Parameters ------------------------
 # ============================================================
 
-MESH_TYPE = 'hole'   # 'square_surface','l_shape', 'hole' or 'cylinder'
-N_VALUES  = [5 * 2**i for i in range(6)]
+MESH_TYPE = 'l_shape'   # 'square_surface','l_shape', 'hole' or 'cylinder'
+
+# Valori di N dinamici a seconda della geometria
+#N_VALUES  = [10 * 2**i for i in range(6)]
+#N_VALUES  = [11, 19, 40, 81, 160, 319]
+N_VALUES_DEFAULT  = [10 * 2**i for i in range(6)]
+N_VALUES_L_SHAPE  = [11, 19, 40, 81, 160, 319]
 
 # For cylinder: source specified as (theta_deg, z) in the unrolled domain
 # theta_deg in [-90, +90],  z in [0, H]
@@ -135,7 +140,14 @@ def get_config(mesh_type, current_dir):
         raise ValueError(f"Unknown mesh_type: '{mesh_type}'")
 
 
-def main(mesh_type=MESH_TYPE, N_values=N_VALUES):
+def main(mesh_type=MESH_TYPE, N_values=None):
+
+    # Selezione dinamica dei valori di N a seconda della geometria
+    if N_values is None:
+        if mesh_type == 'l_shape':
+            N_values = N_VALUES_L_SHAPE
+        else:
+            N_values = N_VALUES_DEFAULT
 
     plt.close('all')
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -170,6 +182,7 @@ def main(mesh_type=MESH_TYPE, N_values=N_VALUES):
         tag_to_node_obj_dic = {}
         node_list    = solver.Make_NodeList_NodeDictionary(output_path, tag_to_node_obj_dic)
         element_list = solver.Make_ElementList(output_path, tag_to_node_obj_dic)
+        #solver.Check_Obtuse_triangles(element_list)
 
         # 4 ---> Source Initialization
         true_source, source_nodes = solver.Innit_Origin_Point(

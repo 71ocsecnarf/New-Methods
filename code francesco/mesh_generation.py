@@ -56,6 +56,12 @@ def generate_mesh(N, L, mesh_type, output_dir):
     else:
         raise ValueError(f"Unknown mesh_type: '{mesh_type}'")
     
+    # --- OPTIMIZATION FOR FMM ---
+    # Alogorithm 6 (Frontal-Delaunay) - Limits obtuse triangles
+    gmsh.option.setNumber("Mesh.Algorithm", 6)
+    # Elevate smoothing to 100 iterations to further improve mesh quality (especially for the l_shape)
+    gmsh.option.setNumber("Mesh.Smoothing", 100)
+
     gmsh.model.mesh.generate(2)
  
     # Use mesh_type as the filename so that different geometries do not
@@ -101,7 +107,13 @@ def generate_cylinder_mesh(N, R, H, output_dir):
     gmsh.model.mesh.setTransfiniteCurve(line_right_tag, N)
     gmsh.model.mesh.setTransfiniteSurface(surf_tag)
     # No setRecombine -> triangles
- 
+    
+    # --- OPTIMIZATION FOR FMM ---
+    # Alogorithm 6 (Frontal-Delaunay) - Limits obtuse triangles
+    gmsh.option.setNumber("Mesh.Algorithm", 6)
+    # Elevate smoothing to 100 iterations to further improve mesh quality (especially for the l_shape)
+    gmsh.option.setNumber("Mesh.Smoothing", 100)
+
     gmsh.model.addPhysicalGroup(2, [surf_tag], tag=1)
     gmsh.model.setPhysicalName(2, 1, "lateral_face")
  
@@ -147,6 +159,12 @@ def generate_square_with_hole(N, L, R, output_dir):
     gmsh.model.addPhysicalGroup(1, [c[1] for c in curves], 2)
     gmsh.model.setPhysicalName(1, 2, "boundary")
 
+    # --- OPTIMIZATION FOR FMM ---
+    # Alogorithm 6 (Frontal-Delaunay) - Limits obtuse triangles
+    gmsh.option.setNumber("Mesh.Algorithm", 6)
+    # Elevate smoothing to 100 iterations to further improve mesh quality (especially for the l_shape)
+    gmsh.option.setNumber("Mesh.Smoothing", 100)
+
     # --- Mesh ---
     gmsh.model.mesh.generate(2)
 
@@ -159,24 +177,202 @@ def generate_square_with_hole(N, L, R, output_dir):
 def generate_l_cylinder_mesh(N, R, H, output_dir):
     """
     Generate a triangular mesh of an L-shaped half-cylinder lateral surface.
-
-    The full half-cylinder spans theta in [-pi/2, +pi/2] and z in [0, H].
-    The missing quadrant is (theta in [0, pi/2], z in [H/2, H]),
-    which creates a concave corner at (theta=0, z=H/2) -- the shadow corner.
-
-    Layout (unrolled view):
-        z=H   [left arm only]  *------*
-                               |      |   <- this quadrant is MISSING
-        z=H/2 *------*---------*------*
-              |               |
-        z=0   *---------------*
-            theta=-pi/2     theta=0    theta=+pi/2
-
-    The concave corner node is at theta=0, z=H/2.
-
+ 
+    The geometry is the half-cylinder lateral surface with one quadrant removed.
+    Angle parametrisation:
+      - theta=0    -> point ( R, 0, z)   right edge
+      - theta=pi/2 -> point ( 0, R, z)   front of cylinder  (concave corner)
+      - theta=pi   -> point (-R, 0, z)   left edge
+ 
+    The domain is the union of two patches:
+      - Bottom arm : theta in [0,   pi],    z in [0,   H/2]
+      - Left arm   : theta in [pi/2, pi],   z in [H/2, H  ]
+ 
+    The missing quadrant is theta in [0, pi/2], z in [H/2, H].
+    The concave (shadow) corner is at (0, R, H/2).
+ 
+    KEY FIX (compared to the previous version):
+        The two patches are built separately and then merged with
+        gmsh.model.occ.fragment() BEFORE meshing.  fragment() forces gmsh
+        to detect the shared edge (the arc theta in [pi/2, pi] at z=H/2)
+        and to assign a SINGLE set of mesh nodes to it.  Without this call,
+        gmsh treats the two arcs as independent curves and generates duplicate
+        nodes on the shared boundary, breaking the FMM connectivity.
+ 
     Parameters
     ----------
     N          : int   -- number of mesh points along the longest edge
+                          (bottom arc, arc-length pi*R).
+    R          : float -- cylinder radius
+    H          : float -- total cylinder height
+    output_dir : str   -- directory where the .msh file is saved
+ 
+    Returns
+    -------
+    output_path : str -- full path to the written .msh file
+    """
+ 
+    gmsh.initialize()
+    gmsh.option.setNumber("General.Terminal", 0)
+    gmsh.model.add("l_cylinder_surface")
+ 
+    # ------------------------------------------------------------------
+    # Angle constants
+    # ------------------------------------------------------------------
+    theta_right = 0.0
+    theta_mid   = np.pi / 2.0
+    theta_left  = np.pi
+ 
+    def cyl_pt(theta, z):
+        """Add a point on the cylinder surface and return its gmsh tag."""
+        return gmsh.model.occ.addPoint(R * np.cos(theta), R * np.sin(theta), z)
+ 
+    # ------------------------------------------------------------------
+    # STEP 1: Corner points
+    #
+    #   p_right_bot = ( R,  0, 0  )   bottom-right
+    #   p_left_bot  = (-R,  0, 0  )   bottom-left
+    #   p_right_mid = ( R,  0, H/2)   mid-right  (top-right of bottom arm)
+    #   p_front_mid = ( 0,  R, H/2)   concave corner
+    #   p_left_mid  = (-R,  0, H/2)   mid-left   (shared by both arms)
+    #   p_front_top = ( 0,  R, H  )   top of left arm, right side
+    #   p_left_top  = (-R,  0, H  )   top-left
+    #
+    # p_axis_bot and p_axis_mid are helper points for addCircleArc only;
+    # they are removed before meshing.
+    # ------------------------------------------------------------------
+    p_right_bot = cyl_pt(theta_right, 0.0)
+    p_left_bot  = cyl_pt(theta_left,  0.0)
+    p_right_mid = cyl_pt(theta_right, H / 2.0)   # created but used implicitly by extrude
+    p_front_mid = cyl_pt(theta_mid,   H / 2.0)
+    p_left_mid  = cyl_pt(theta_left,  H / 2.0)
+    p_front_top = cyl_pt(theta_mid,   H)
+    p_left_top  = cyl_pt(theta_left,  H)
+ 
+    p_axis_bot = gmsh.model.occ.addPoint(0.0, 0.0, 0.0)
+    p_axis_mid = gmsh.model.occ.addPoint(0.0, 0.0, H / 2.0)
+ 
+    # ------------------------------------------------------------------
+    # STEP 2: Bottom arm -- extrude the full bottom arc upward by H/2
+    #
+    # The arc spans theta in [0, pi] at z=0.
+    # extrude() returns a list of (dim, tag) pairs:
+    #   (2, surf_bot)         -- the new lateral surface
+    #   (1, right_lateral)    -- vertical edge at theta=0
+    #   (1, top_arc_bot)      -- arc at z=H/2, theta in [0, pi]
+    #   (1, left_lateral_bot) -- vertical edge at theta=pi
+    # ------------------------------------------------------------------
+    arc_bot = gmsh.model.occ.addCircleArc(p_right_bot, p_axis_bot, p_left_bot)
+    ext_bot  = gmsh.model.occ.extrude([(1, arc_bot)], 0, 0, H / 2.0)
+    gmsh.model.occ.synchronize()
+ 
+    surf_bot = next(e[1] for e in ext_bot if e[0] == 2)
+ 
+    # ------------------------------------------------------------------
+    # STEP 3: Left arm -- extrude the left-quarter arc upward by H/2
+    #
+    # The arc spans theta in [pi/2, pi] at z=H/2.
+    # We create it with the SAME endpoint tags (p_front_mid, p_left_mid)
+    # that were used as corner points in STEP 1.  After fragment() in
+    # STEP 4, gmsh will recognise that this arc coincides geometrically
+    # with the left half of top_arc_bot and merge them.
+    # ------------------------------------------------------------------
+    arc_left_mid = gmsh.model.occ.addCircleArc(p_front_mid, p_axis_mid, p_left_mid)
+    ext_top      = gmsh.model.occ.extrude([(1, arc_left_mid)], 0, 0, H / 2.0)
+    gmsh.model.occ.synchronize()
+ 
+    surf_top = next(e[1] for e in ext_top if e[0] == 2)
+ 
+    # ------------------------------------------------------------------
+    # STEP 4: Merge the two patches with fragment()
+    #
+    # fragment(A, B) computes the Boolean fragmentation of A and B:
+    # it splits both objects along their intersection and produces a
+    # conforming topology where shared boundaries carry a single curve tag.
+    # This is the key step that forces shared mesh nodes on the common
+    # edge (theta in [pi/2, pi], z=H/2) so that the FMM can propagate
+    # across the two patches.
+    #
+    # We do NOT use fuse() because that would merge the two surfaces into
+    # one, losing the separate patch structure.  fragment() keeps both
+    # surfaces intact while enforcing conformity at the shared boundary.
+    # ------------------------------------------------------------------
+    gmsh.model.occ.fragment([(2, surf_bot)], [(2, surf_top)])
+    gmsh.model.occ.synchronize()
+ 
+    # ------------------------------------------------------------------
+    # STEP 5: Remove axis helper points
+    #
+    # p_axis_bot and p_axis_mid were needed only as arc-centre arguments.
+    # Removing them prevents isolated nodes from appearing in the mesh.
+    # recursive=False: remove the point only, not the curves attached to it
+    # (those curves are the arcs we already built).
+    # ------------------------------------------------------------------
+    for pt in [p_axis_bot, p_axis_mid]:
+        try:
+            gmsh.model.occ.remove([(0, pt)], recursive=False)
+        except Exception:
+            pass   # already removed implicitly by fragment() -- safe to ignore
+    gmsh.model.occ.synchronize()
+ 
+    # ------------------------------------------------------------------
+    # STEP 6: Mesh size and generation
+    #
+    # lc is chosen so that the longest edge (bottom arc, arc-length pi*R)
+    # has N-1 intervals, consistent with the other mesh generators.
+    # ------------------------------------------------------------------
+    lc = np.pi * R / (N - 1)
+    gmsh.model.mesh.setSize(gmsh.model.getEntities(0), lc)
+    
+    # --- OPTIMIZATION FOR FMM ---
+    # Alogorithm 6 (Frontal-Delaunay) - Limits obtuse triangles
+    gmsh.option.setNumber("Mesh.Algorithm", 6)
+    # Elevate smoothing to 100 iterations to further improve mesh quality (especially for the l_shape)
+    gmsh.option.setNumber("Mesh.Smoothing", 100)
+    
+    gmsh.model.mesh.generate(2)
+ 
+    # ------------------------------------------------------------------
+    # STEP 7: Write and finalise
+    # ------------------------------------------------------------------
+    output_path = os.path.join(output_dir, "l_cylinder_surface.msh")
+    gmsh.write(output_path)
+    gmsh.finalize()
+ 
+    return output_path
+    """
+    Generate a triangular mesh of an L-shaped half-cylinder lateral surface.
+
+    The geometry is the half-cylinder lateral surface with one quadrant removed.
+    Angle parametrisation (consistent with generate_cylinder_mesh):
+      - theta=0    -> point ( R, 0, z)   right edge
+      - theta=pi/2 -> point ( 0, R, z)   front of cylinder
+      - theta=pi   -> point (-R, 0, z)   left edge
+
+    The domain is the union of two patches:
+      - Bottom arm : theta in [0,    pi],  z in [0,   H/2]  (full half-cylinder)
+      - Left arm   : theta in [pi/2, pi],  z in [H/2, H  ]  (left quarter only)
+
+    The missing quadrant is theta in [0, pi/2], z in [H/2, H].
+    The concave (shadow) corner is at theta=pi/2, z=H/2 -> 3D coords (0, R, H/2).
+
+    Unrolled layout (theta increases right-to-left, z upward):
+
+        z=H    P6-------P5
+               |  LEFT   |
+        z=H/2  P_lm--P4--P3
+               |  BOTTOM  |
+        z=0    P_lb-------P2
+             theta=pi  pi/2  0
+            (-R,0)   (0,R)  (R,0)
+
+    Each patch is built by extruding an arc upward (dz = H/2), which places
+    nodes exactly on the cylinder surface (no surface interpolation).
+
+    Parameters
+    ----------
+    N          : int   -- number of mesh points along the longest edge (bottom arc,
+                          arc-length pi*R). Other edges are scaled proportionally.
     R          : float -- cylinder radius
     H          : float -- total cylinder height
     output_dir : str   -- directory where the .msh file is saved
@@ -187,111 +383,87 @@ def generate_l_cylinder_mesh(N, R, H, output_dir):
     """
 
     gmsh.initialize()
+    gmsh.option.setNumber("General.Terminal", 0)
     gmsh.model.add("l_cylinder_surface")
 
     # ------------------------------------------------------------------
-    # STEP 1: Define the 6 corner points of the L-shape on the cylinder
-    #
-    # The L-shape boundary has 6 vertices (like the flat L-shape):
-    #   P1 = (-R, 0, 0)    theta=-pi/2, z=0   (bottom-left)
-    #   P2 = ( R, 0, 0)    theta=+pi/2, z=0   (bottom-right)
-    #   P3 = ( R, 0, H/2)  theta=+pi/2, z=H/2 (mid-right)
-    #   P4 = ( 0, R, H/2)  theta=0,     z=H/2 (concave corner -- shadow trigger)
-    #   P5 = ( 0, R, H  )  theta=0,     z=H   (top-mid)  <- NOT NEEDED: boundary goes to P4
-    #   ...
-    # Actually we define them by (theta, z) and convert to 3D:
-    #   x = R * cos(theta),  y = R * sin(theta),  z = z
+    # Angle constants
     # ------------------------------------------------------------------
+    theta_right = 0.0
+    theta_mid   = np.pi / 2.0
+    theta_left  = np.pi
 
-    def cyl_point(theta_rad, z_val, lc=0.0):
+    def cyl_pt(theta, z):
         """Add a point on the cylinder surface and return its gmsh tag."""
-        x = R * np.cos(theta_rad)
-        y = R * np.sin(theta_rad)
-        # lc=0 means gmsh uses the global mesh size (set later with setSize)
-        return gmsh.model.occ.addPoint(x, y, z_val, lc)
-
-    # Center of the cylinder base (needed for arc definitions)
-    p_center_bot = gmsh.model.occ.addPoint(0.0, 0.0, 0.0)
-    p_center_mid = gmsh.model.occ.addPoint(0.0, 0.0, H / 2.0)
-
-    # The 6 boundary corners of the L-shape (theta in radians):
-    #   left  = -pi/2,  mid = 0,  right = +pi/2
-    theta_left  = -np.pi / 2.0
-    theta_mid   =  0.0
-    theta_right = +np.pi / 2.0
-
-    p1 = cyl_point(theta_left,  0.0  )   # bottom-left
-    p2 = cyl_point(theta_right, 0.0  )   # bottom-right
-    p3 = cyl_point(theta_right, H / 2)   # mid-right
-    p4 = cyl_point(theta_mid,   H / 2)   # concave corner (shadow corner)
-    p5 = cyl_point(theta_mid,   H    )   # top-mid
-    p6 = cyl_point(theta_left,  H    )   # top-left
+        return gmsh.model.occ.addPoint(R * np.cos(theta), R * np.sin(theta), z)
 
     # ------------------------------------------------------------------
-    # STEP 2: Define the boundary curves
+    # STEP 1: Define the 7 boundary corner points
     #
-    # Bottom arc  : P1 -> P2  along z=0      (full half-circle arc)
-    # Right edge  : P2 -> P3  vertical line  (theta=+pi/2)
-    # Mid-low arc : P3 -> P4  along z=H/2    (right quarter-arc, REVERSED)
-    # Inner vert  : P4 -> P5  vertical line  (theta=0, inner concave edge)
-    # Top arc     : P5 -> P6  along z=H      (left quarter-arc, REVERSED)
-    # Left edge   : P6 -> P1  vertical line  (theta=-pi/2)
+    #   p_right_bot = (R,  0, 0)     bottom-right
+    #   p_left_bot  = (-R, 0, 0)     bottom-left
+    #   p_right_mid = (R,  0, H/2)   mid-right   (bottom arm top-right)
+    #   p_front_mid = (0,  R, H/2)   concave corner (shadow corner)
+    #   p_left_mid  = (-R, 0, H/2)   mid-left    (shared by both arms)
+    #   p_front_top = (0,  R, H)     top-mid     (left arm top-right)
+    #   p_left_top  = (-R, 0, H)     top-left
     # ------------------------------------------------------------------
+    p_right_bot = cyl_pt(theta_right, 0.0)
+    p_left_bot  = cyl_pt(theta_left,  0.0)
+    p_right_mid = cyl_pt(theta_right, H / 2)
+    p_front_mid = cyl_pt(theta_mid,   H / 2)
+    p_left_mid  = cyl_pt(theta_left,  H / 2)
+    p_front_top = cyl_pt(theta_mid,   H)
+    p_left_top  = cyl_pt(theta_left,  H)
 
-    # gmsh.model.occ.addCircleArc(start, center, end)
-    # The arc goes from 'start' to 'end' passing through the short way around
-    # the circle centred at 'center'.
-
-    arc_bottom = gmsh.model.occ.addCircleArc(p1, p_center_bot, p2)  # z=0, full half
-    line_right = gmsh.model.occ.addLine(p2, p3)                      # right vertical
-    arc_mid    = gmsh.model.occ.addCircleArc(p3, p_center_mid, p4)  # z=H/2, right quarter
-    line_inner = gmsh.model.occ.addLine(p4, p5)                      # inner concave vertical
-    arc_top    = gmsh.model.occ.addCircleArc(p5, p_center_mid, p6)  # z=H, left quarter
-    line_left  = gmsh.model.occ.addLine(p6, p1)                      # left vertical
+    # Axis points: needed only as arc-centre arguments for addCircleArc.
+    # They are NOT part of the surface; removed before meshing.
+    p_axis_bot = gmsh.model.occ.addPoint(0.0, 0.0, 0.0)
+    p_axis_mid = gmsh.model.occ.addPoint(0.0, 0.0, H / 2.0)
 
     # ------------------------------------------------------------------
-    # STEP 3: Create the surface from the closed boundary loop
+    # STEP 2: Build BOTTOM ARM by extruding the full bottom arc upward by H/2
     #
-    # addCurveLoop expects an ordered list of curve tags that form a
-    # closed, oriented boundary.  Negative tag = reversed orientation.
-    # addSurfaceFilling creates a surface that follows the curved boundary
-    # (unlike addPlaneSurface which is only for flat surfaces).
+    # Arc at z=0: p_right_bot -> p_left_bot (passes through (0, R, 0), the front).
+    # extrude returns [(dim, tag), ...]:
+    #   dim=2 -> new surface
+    #   dim=1 -> new curves: [right_lateral, top_arc, left_lateral]
     # ------------------------------------------------------------------
-
-    boundary_loop = gmsh.model.occ.addCurveLoop([
-        arc_bottom,
-        line_right,
-        arc_mid,
-        line_inner,
-        arc_top,
-        line_left
-    ])
-
-    # addSurfaceFilling: creates a surface that interpolates the boundary curves.
-    # It handles non-planar (curved) surfaces correctly.
-    surface = gmsh.model.occ.addSurfaceFilling(boundary_loop)
-
-    # synchronize() "compiles" all OCC geometry into the gmsh model
-    # -- must be called before any meshing or physical group operation
+    arc_bot = gmsh.model.occ.addCircleArc(p_right_bot, p_axis_bot, p_left_bot)
+    ext_bot  = gmsh.model.occ.extrude([(1, arc_bot)], 0, 0, H / 2)
     gmsh.model.occ.synchronize()
 
     # ------------------------------------------------------------------
-    # STEP 4: Set mesh size and generate mesh
+    # STEP 3: Build LEFT ARM by extruding the left quarter arc upward by H/2
     #
-    # lc = characteristic mesh size = approx. edge length of triangles.
-    # getEntities(0) returns all points (dimension 0) in the model.
-    # setSize applies the same size to all of them.
+    # Arc at z=H/2: p_front_mid -> p_left_mid (left quarter, theta pi/2 -> pi).
+    # We define this arc explicitly rather than reusing the extruded top arc
+    # of the bottom arm (which spans the full half-circle).
     # ------------------------------------------------------------------
+    arc_left_mid = gmsh.model.occ.addCircleArc(p_front_mid, p_axis_mid, p_left_mid)
+    ext_top      = gmsh.model.occ.extrude([(1, arc_left_mid)], 0, 0, H / 2)
+    gmsh.model.occ.synchronize()
 
-    lc = (np.pi * R) / (N - 1)   # arc length of full half-circle / (N-1) intervals
+    # ------------------------------------------------------------------
+    # STEP 4: Remove axis helper points so they do not appear as isolated
+    # nodes in the output .msh file.
+    # ------------------------------------------------------------------
+    gmsh.model.occ.remove([(0, p_axis_bot), (0, p_axis_mid)], recursive=False)
+    gmsh.model.occ.synchronize()
+
+    # ------------------------------------------------------------------
+    # STEP 5: Set uniform mesh size and generate the surface mesh
+    #
+    # lc = arc-length of the bottom arc / (N-1) intervals.
+    # ------------------------------------------------------------------
+    lc = np.pi * R / (N - 1)
     gmsh.model.mesh.setSize(gmsh.model.getEntities(0), lc)
 
-    gmsh.model.mesh.generate(2)   # 2 = surface mesh (triangles)
+    gmsh.model.mesh.generate(2)
 
     # ------------------------------------------------------------------
-    # STEP 5: Write to file and clean up
+    # STEP 6: Write to file and clean up
     # ------------------------------------------------------------------
-
     output_path = os.path.join(output_dir, "l_cylinder_surface.msh")
     gmsh.write(output_path)
     gmsh.finalize()
