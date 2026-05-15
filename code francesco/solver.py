@@ -74,7 +74,8 @@ def Make_ElementList(filename, tag_to_node_obj_dic):
     return np.array(element_list)
 
 
-
+""" 
+# THIS FUNCTION DOES NOT WORK IN 3D
 def Check_Obtuse_triangles(element_list):
 
     print("\n")
@@ -97,6 +98,48 @@ def Check_Obtuse_triangles(element_list):
     print(f"There are {counting} obtuse elements")
     print("Checking for obtuse element is done --> ok\n")
 
+"""
+def Check_Obtuse_triangles(element_list):
+    """
+    Checks for obtuse triangles in the mesh.
+    An obtuse triangle has one angle strictly greater than 90 degrees.
+    This check is crucial for the Eikonal equation's upwind condition in FMM.
+    """
+    print("\n")
+    print("========================================================")
+    print("============= Checking for obtuse elements =============")
+    print("========================================================")
+    
+    counting = 0
+    for e in element_list:
+        # Extract 3D coordinates for all 3 nodes of the triangle
+        A = e.nodes[0].coords
+        B = e.nodes[1].coords
+        C = e.nodes[2].coords
+
+        # Compute vectors representing the sides of the triangle
+        # These are 3D vectors (x, y, z)
+        vAB = B - A
+        vAC = C - A
+        vBC = C - B
+
+        # Check for obtuse angles using the dot product:
+        # If dot(v1, v2) < 0, the angle between them is > 90 degrees.
+        
+        # Angle at vertex A: dot product of AB and AC
+        angle_A = np.dot(vAB, vAC)
+        # Angle at vertex B: dot product of BA and BC
+        angle_B = np.dot(-vAB, vBC)
+        # Angle at vertex C: dot product of CA and CB
+        angle_C = np.dot(-vAC, -vBC)
+
+        # Using a small epsilon to avoid false positives due to floating point precision
+        if min(angle_A, angle_B, angle_C) < -1e-12:
+            e.IsObtuse = True
+            counting += 1
+    
+    print(f"There are {counting} obtuse elements")
+    print("Checking for obtuse elements is done --> ok\n")
 
 
 def Compute_Dist_Point_Triangle(P, element):

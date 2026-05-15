@@ -252,7 +252,7 @@ def eikonal_sol_circ(node, node_virtual_source):
     best_node_vs: NODE  -- virtual source associated with that distance
     """
 
-    SAME_LINE_TOL = 1.15e-1   # Cross-product threshold for collinearity check
+    SAME_LINE_TOL = 1.0e-1   # Cross-product threshold for collinearity check
 
     dist         = float('inf')
     best_node_vs = node_virtual_source.get(node.idx)  # fallback: keep current VS
@@ -354,6 +354,8 @@ def eikonal_sol_circ(node, node_virtual_source):
                         best_local_dist = t_2d
                         best_local_vs = s
             
+            """
+                        # DEBUG
             node_xy = node.coords[:2]
             is_problem = (node_xy[0] > 0.5 and node_xy[1] > 0.5)  # zona con errori
             if is_problem and best_local_dist < dist:
@@ -365,10 +367,13 @@ def eikonal_sol_circ(node, node_virtual_source):
                     f"winner={winner} | "
                     f"same_vs={corner_a is corner_b} | "
                     f"dist={best_local_dist:.6f}")
+            """
 
 
             # Commit this triangle's result to the global best
             if best_local_dist < dist:
+
+                """
                 # DEBUG: controlla se la sorgente virtuale è sensata
                 if best_node_vs is not None:
                     d_vs_to_node = np.linalg.norm(node.coords - best_node_vs.coords)
@@ -377,6 +382,9 @@ def eikonal_sol_circ(node, node_virtual_source):
                         f"| dist={best_local_dist:.6f} "
                         f"| |node-VS|={d_vs_to_node:.6f} "
                         f"| VS={best_node_vs.coords[:2]}")
+                
+                """
+
                 dist         = best_local_dist
                 best_node_vs = best_local_vs
 
@@ -431,7 +439,8 @@ def compute_2d_eikonal(node_a, node_b, node_c, d_A_raw, d_B_raw, S_prime):
     d_A = d_A_raw - S_prime_dist
     d_B = d_B_raw - S_prime_dist
 
-    # DEBUG: controlla la consistenza geometrica della sorgente virtuale
+    """
+        # DEBUG: controlla la consistenza geometrica della sorgente virtuale
     if S_prime is not None and S_prime.dist > 0:
         true_dist_A = np.linalg.norm(node_a.coords - S_prime.coords)
         true_dist_B = np.linalg.norm(node_b.coords - S_prime.coords)
@@ -441,6 +450,7 @@ def compute_2d_eikonal(node_a, node_b, node_c, d_A_raw, d_B_raw, S_prime):
             print(f"VS_MISMATCH: d_A={d_A:.6f} vs |A-VS|={true_dist_A:.6f} (err={err_A:.2e})"
                   f" | d_B={d_B:.6f} vs |B-VS|={true_dist_B:.6f} (err={err_B:.2e})"
                   f" | VS={S_prime.coords[:2]}")
+    """
     
     if d_A < 0.0 or d_B < 0.0:
         # The virtual source S' is farther from A or B than the current node C,

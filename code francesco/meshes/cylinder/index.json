@@ -1,0 +1,74 @@
+{
+  "5": {
+    "N": 5,
+    "h": 0.39269908169872414,
+    "mesh_type": "cylinder",
+    "filename": "cylinder_N0005.msh",
+    "L": 1.0,
+    "R": 0.5,
+    "H": 1.0
+  },
+  "10": {
+    "N": 10,
+    "h": 0.17453292519943295,
+    "mesh_type": "cylinder",
+    "filename": "cylinder_N0010.msh",
+    "L": 1.0,
+    "R": 0.5,
+    "H": 1.0
+  },
+  "20": {
+    "N": 20,
+    "h": 0.08267349088394192,
+    "mesh_type": "cylinder",
+    "filename": "cylinder_N0020.msh",
+    "L": 1.0,
+    "R": 0.5,
+    "H": 1.0
+  },
+  "40": {
+    "N": 40,
+    "h": 0.04027682889217683,
+    "mesh_type": "cylinder",
+    "filename": "cylinder_N0040.msh",
+    "L": 1.0,
+    "R": 0.5,
+    "H": 1.0
+  },
+  "80": {
+    "N": 80,
+    "h": 0.019883497807530338,
+    "mesh_type": "cylinder",
+    "filename": "cylinder_N0080.msh",
+    "L": 1.0,
+    "R": 0.5,
+    "H": 1.0
+  },
+  "160": {
+    "N": 160,
+    "h": 0.009879222181099979,
+    "mesh_type": "cylinder",
+    "filename": "cylinder_N0160.msh",
+    "L": 1.0,
+    "R": 0.5,
+    "H": 1.0
+  },
+  "320": {
+    "N": 320,
+    "h": 0.004924126416284942,
+    "mesh_type": "cylinder",
+    "filename": "cylinder_N0320.msh",
+    "L": 1.0,
+    "R": 0.5,
+    "H": 1.0
+  },
+  "640": {
+    "N": 640,
+    "h": 0.0024582102140765206,
+    "mesh_type": "cylinder",
+    "filename": "cylinder_N0640.msh",
+    "L": 1.0,
+    "R": 0.5,
+    "H": 1.0
+  }
+}

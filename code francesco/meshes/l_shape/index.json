@@ -1,0 +1,74 @@
+{
+  "5": {
+    "N": 5,
+    "h": 0.25,
+    "mesh_type": "l_shape",
+    "filename": "l_shape_N0005.msh",
+    "L": 1.0,
+    "R": 0.5,
+    "H": 1.0
+  },
+  "11": {
+    "N": 11,
+    "h": 0.1,
+    "mesh_type": "l_shape",
+    "filename": "l_shape_N0011.msh",
+    "L": 1.0,
+    "R": 0.5,
+    "H": 1.0
+  },
+  "19": {
+    "N": 19,
+    "h": 0.05555555555555555,
+    "mesh_type": "l_shape",
+    "filename": "l_shape_N0019.msh",
+    "L": 1.0,
+    "R": 0.5,
+    "H": 1.0
+  },
+  "40": {
+    "N": 40,
+    "h": 0.02564102564102564,
+    "mesh_type": "l_shape",
+    "filename": "l_shape_N0040.msh",
+    "L": 1.0,
+    "R": 0.5,
+    "H": 1.0
+  },
+  "81": {
+    "N": 81,
+    "h": 0.0125,
+    "mesh_type": "l_shape",
+    "filename": "l_shape_N0081.msh",
+    "L": 1.0,
+    "R": 0.5,
+    "H": 1.0
+  },
+  "160": {
+    "N": 160,
+    "h": 0.006289308176100629,
+    "mesh_type": "l_shape",
+    "filename": "l_shape_N0160.msh",
+    "L": 1.0,
+    "R": 0.5,
+    "H": 1.0
+  },
+  "319": {
+    "N": 319,
+    "h": 0.0031446540880503146,
+    "mesh_type": "l_shape",
+    "filename": "l_shape_N0319.msh",
+    "L": 1.0,
+    "R": 0.5,
+    "H": 1.0
+  },
+  "641": {
+    "N": 641,
+    "h": 0.0015625,
+    "mesh_type": "l_shape",
+    "filename": "l_shape_N0641.msh",
+    "L": 1.0,
+    "R": 0.5,
+    "H": 1.0
+  }
+}

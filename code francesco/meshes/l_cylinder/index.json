@@ -1,0 +1,74 @@
+{
+  "9": {
+    "N": 9,
+    "h": 0.19634954084936207,
+    "mesh_type": "l_cylinder",
+    "filename": "l_cylinder_N0009.msh",
+    "L": 1.0,
+    "R": 0.5,
+    "H": 1.0
+  },
+  "10": {
+    "N": 10,
+    "h": 0.17453292519943295,
+    "mesh_type": "l_cylinder",
+    "filename": "l_cylinder_N0010.msh",
+    "L": 1.0,
+    "R": 0.5,
+    "H": 1.0
+  },
+  "18": {
+    "N": 18,
+    "h": 0.09239978392911156,
+    "mesh_type": "l_cylinder",
+    "filename": "l_cylinder_N0018.msh",
+    "L": 1.0,
+    "R": 0.5,
+    "H": 1.0
+  },
+  "41": {
+    "N": 41,
+    "h": 0.039269908169872414,
+    "mesh_type": "l_cylinder",
+    "filename": "l_cylinder_N0041.msh",
+    "L": 1.0,
+    "R": 0.5,
+    "H": 1.0
+  },
+  "77": {
+    "N": 77,
+    "h": 0.02066837272098548,
+    "mesh_type": "l_cylinder",
+    "filename": "l_cylinder_N0077.msh",
+    "L": 1.0,
+    "R": 0.5,
+    "H": 1.0
+  },
+  "161": {
+    "N": 161,
+    "h": 0.009817477042468103,
+    "mesh_type": "l_cylinder",
+    "filename": "l_cylinder_N0161.msh",
+    "L": 1.0,
+    "R": 0.5,
+    "H": 1.0
+  },
+  "321": {
+    "N": 321,
+    "h": 0.004908738521234052,
+    "mesh_type": "l_cylinder",
+    "filename": "l_cylinder_N0321.msh",
+    "L": 1.0,
+    "R": 0.5,
+    "H": 1.0
+  },
+  "647": {
+    "N": 647,
+    "h": 0.0024315732612924094,
+    "mesh_type": "l_cylinder",
+    "filename": "l_cylinder_N0647.msh",
+    "L": 1.0,
+    "R": 0.5,
+    "H": 1.0
+  }
+}
