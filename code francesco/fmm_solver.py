@@ -314,7 +314,7 @@ def eikonal_sol_circ(node, node_virtual_source):
                     best_local_vs   = corner_a
 
             else:
-                if node_a.dist > node_b.dist:
+                if node_a.dist >= node_b.dist:
                     node_vs = node_a
                     vs = corner_a
                     node_s = node_b
@@ -325,7 +325,8 @@ def eikonal_sol_circ(node, node_virtual_source):
                     node_s = node_a
                     s = corner_a
                 
-                v = vs.coords - s.coords
+                # Build the relevant vectors for the is_Minus condition
+                v = vs.coords - s.coords # Vector from the "secondary" source to the "primary" source
                 v_norm = np.linalg.norm(v)
                 if v_norm > 1e-14:
                     v = v / v_norm
@@ -340,7 +341,7 @@ def eikonal_sol_circ(node, node_virtual_source):
                 if n_vs_norm > 1e-14:
                     node_vs_vec = node_vs_vec / n_vs_norm
 
-                # Proiezione sul piano tangente locale tramite la normale del triangolo
+                # Project the vectors onto the tangent plane to handle curved 3D surfaces correctly
                 cp1 = np.dot(np.cross(v, node_vs_vec), normal)
                 cp2 = np.dot(np.cross(v, CS), normal)
                 isMinus = (cp1 * cp2) > 0.0
@@ -648,6 +649,7 @@ def Make_GIF(folder="frames", gif_name="front.gif"):
 
     imageio.mimsave(gif_name, images, duration=1)
 
+
 def Save_Debug_Frame(node_list, current_node, node_virtual_source, frame_id, folder="debug_frames"):
 
     if not os.path.exists(folder):
@@ -697,6 +699,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+
 
 def Save_Debug_Frame_3D(node_list, current_node, node_virtual_source, frame_id, folder="debug_frames_3D"):
     
