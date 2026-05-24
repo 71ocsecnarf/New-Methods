@@ -219,10 +219,10 @@ def fmm_algorithm_circ(node_list, source_nodes):
                     neighbor.state          = 'TRIAL'
                     heap_push(neighbor, new_dist)
 
-        #Save_Debug_Frame(node_list, current_node, node_virtual_source, frame_id)
-        #frame_id += 1
+        Save_Debug_Frame(node_list, current_node, node_virtual_source, frame_id)
+        frame_id += 1
 
-    #Make_GIF(folder="debug_frames", gif_name="front_source.gif")
+    Make_GIF(folder="debug_frames", gif_name="front_source.gif")
 
 
 
@@ -252,7 +252,7 @@ def eikonal_sol_circ(node, node_virtual_source):
     best_node_vs: NODE  -- virtual source associated with that distance
     """
 
-    SAME_LINE_TOL = 1.0e-1   # Cross-product threshold for collinearity check
+    SAME_LINE_TOL = 1e-1   # Cross-product threshold for collinearity check
 
     dist         = float('inf')
     best_node_vs = node_virtual_source.get(node.idx)  # fallback: keep current VS
@@ -340,7 +340,10 @@ def eikonal_sol_circ(node, node_virtual_source):
                 if n_vs_norm > 1e-14:
                     node_vs_vec = node_vs_vec / n_vs_norm
 
-                isMinus = np.dot(np.cross(v, node_vs_vec), np.cross(v, CS)) >= -1e-10
+                # Proiezione sul piano tangente locale tramite la normale del triangolo
+                cp1 = np.dot(np.cross(v, node_vs_vec), normal)
+                cp2 = np.dot(np.cross(v, CS), normal)
+                isMinus = (cp1 * cp2) > 0.0
 
                 if isMinus:
                     t_2d = compute_2d_eikonal(node_a, node_b, node, node_a.dist, node_b.dist, vs)
@@ -452,7 +455,7 @@ def compute_2d_eikonal(node_a, node_b, node_c, d_A_raw, d_B_raw, S_prime):
                   f" | VS={S_prime.coords[:2]}")
     """
     
-    if d_A < 0.0 or d_B < 0.0:
+    if d_A < -1e-10 or d_B < -1e-10:
         # The virtual source S' is farther from A or B than the current node C,
         # which violates the upwind condition.  This can happen due to
         # numerical errors or in non-convex geometries.  Reject this update.
@@ -467,12 +470,12 @@ def compute_2d_eikonal(node_a, node_b, node_c, d_A_raw, d_B_raw, S_prime):
     # Degenerate triangle check (normalised to be scale-invariant)
     norm_AB = np.linalg.norm(AB)
     norm_AC = np.linalg.norm(AC)
-    if np.linalg.norm(normal) / (norm_AB * norm_AC + 1e-30) < 1e-10:
+    if np.linalg.norm(normal) / (norm_AB * norm_AC + 1e-16) < 1e-10:
         return float('inf')
 
     normal = normal / np.linalg.norm(normal)
     L = norm_AB
-    if L < 1e-14:
+    if L < 1e-10:
         return float('inf')
 
     # Local frame: x_hat along AB, y_hat in the surface plane perpendicular to AB
@@ -490,9 +493,12 @@ def compute_2d_eikonal(node_a, node_b, node_c, d_A_raw, d_B_raw, S_prime):
     x_S    = (d_A**2 - d_B**2 + L**2) / (2.0 * L)
     sq_y_S = d_A**2 - x_S**2
 
-    # Reject if the system has no real solution
-    if sq_y_S < 0.0:
+    # Tolerance to avoid numerical error - reject non-physical solutions
+    if sq_y_S < -1e-10:
         return float('inf')
+        
+    # Clamp to zero to avoid numerical errors when S is very close to AB
+    sq_y_S = max(0.0, sq_y_S)
 
     # S must be on the opposite side of AB from C (upwind convention)
     sign_y_S = -np.sign(y_C)
@@ -503,12 +509,12 @@ def compute_2d_eikonal(node_a, node_b, node_c, d_A_raw, d_B_raw, S_prime):
     # ====== STEP 4 ---> Upwind condition (shadow-zone rejection) ====
     # The straight ray from S to C must cross the interior of edge AB.
     # Intersect the ray with the local x-axis (y = 0).
-    if abs(y_C - y_S) > 1e-12:
+    if abs(y_C - y_S) > 1e-10:
         x_int = x_S - y_S * (x_C - x_S) / (y_C - y_S)
     else:
         x_int = -1.0    # Ray parallel to AB: force rejection
 
-    if not (-1e-10 <= x_int <= L + 1e-10):
+    if not (-1e-8 <= x_int <= L + 1e-8):
         return float('inf')
 
     # ====== STEP 5 ---> Distance from S to C ====
@@ -547,29 +553,41 @@ def store_virtual_source(node_1, node_2, S, edge_curvature):
 
 
 
-def consistent_update(node1, node2, normal, vs_node1, samelinetol = 1e-1):
+def consistent_update(node1, node2, normal, vs_node1, samelinetol = 1e-4):
     """
-    It checks if the 1D update of the edge curvature is on the same line (i.e. the front is 
-    moving along a boundary) or the update is not consistent, i.e the front has to cross a
-    corner node. In the latter case the virtual source has to be re-initialized.
+    Checks if the 1D wavefront propagation from node1 to node2 is consistent
+    with the ray coming from vs_node1.
     """
     if vs_node1 is None:
         return True
     
+    # v1: Vector from ALIVE node (A) to TRIAL node (C)
     v1 = node2.coords - node1.coords
-    v2 = (node2.coords - vs_node1.coords)
-    v2 = v2 - np.dot(v2, normal) * normal
+    
+    # v2: Vector from Virtual Source to TRIAL node (C)
+    v2 = node2.coords - vs_node1.coords
+    
+    # Project v2 onto the tangent plane to handle curved 3D surfaces correctly
+    v2_proj = v2 - np.dot(v2, normal) * normal
                 
     n1 = np.linalg.norm(v1)
-    n2 = np.linalg.norm(v2)
+    n2 = np.linalg.norm(v2_proj)
                 
     if n1 > 1e-14 and n2 > 1e-14:
-        isOnTheSameLine = np.linalg.norm(np.cross(v1/n1, v2/n2)) < samelinetol
+        v1_hat = v1 / n1
+        v2_hat = v2_proj / n2
+        
+        # 1. Strict check against backward propagation
+        if np.dot(v1_hat, v2_hat) < 0.0:
+            return False
+            
+        # 2. Strict collinearity check
+        sin_theta = np.linalg.norm(np.cross(v1_hat, v2_hat))
+        isOnTheSameLine = sin_theta < samelinetol
     else:
         isOnTheSameLine = True
 
     return isOnTheSameLine
-
 
 
 
@@ -663,8 +681,9 @@ def Save_Debug_Frame(node_list, current_node, node_virtual_source, frame_id, fol
     ymax = xmax
     plt.xlim(xmin-0.1, xmax+0.1)
     plt.ylim(ymin-0.1, ymax+0.1)
-    x_line = np.linspace(0.2, 0.8, 100)
-    y_line = (5/3) * (x_line - 0.2)
+    x_line = np.linspace(0.0, 1.0, 100)
+    y_line = x_line
+    #y_line = (5/3) * (x_line - 0.2)
 
     plt.plot(x_line, y_line, 'r--', linewidth=2)
 

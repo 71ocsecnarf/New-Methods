@@ -205,7 +205,7 @@ def compute_err(node_list, source_coord):
             continue
             
         ex_dist = np.linalg.norm(node.coords - source_coord)
-        err_i = abs(ex_dist - node.dist)
+        err_i = (ex_dist - node.dist)
         errors.append(err_i)
         
         if ex_dist > 1e-14:
@@ -242,7 +242,7 @@ def compute_err_cylinder(node_list, true_source, R):
         theta   = np.arctan2(y, x)
         d_theta = (theta - theta0 + np.pi) % (2 * np.pi) - np.pi
         d_exact = np.sqrt((R_source * d_theta)**2 + (z - z0)**2)
-        err     = abs(node.dist - d_exact)
+        err     = (node.dist - d_exact)
         errors.append(err)
         
         max_err = max(max_err, err)
@@ -1101,9 +1101,11 @@ def Plot_Error_Field(node_list, element_list, mesh_type, true_source, L=1.0, R=0
     else:
         plt.figure(figsize=(8, 6))
         plt.gca().set_aspect('equal')
+    
+        levels = np.linspace(errors.min(), errors.max(), 40)
         
-        cntr = plt.tricontourf(x, y, triangles, errors, levels=40, cmap="viridis")
-        plt.colorbar(cntr, label="Absolute Error")
+        cntr = plt.tricontourf(x, y, triangles, errors, levels=levels, cmap="viridis", extend='both')
+        plt.colorbar(cntr, label="Signed Error")
         
         plt.triplot(x, y, triangles, color='black', alpha=0.1, linewidth=0.5)
         
@@ -1169,6 +1171,7 @@ def Plot_Point_Convergence(h_values, point_errors_fmm, point_errors_circ,
     plt.legend(fontsize=8)
     plt.grid(True, which='both')
     plt.gca().invert_xaxis()
+    plt.ylim(bottom=1e-7)
     plt.tight_layout()
 
     # Save under a distinct name to avoid overwriting the global convergence plot
