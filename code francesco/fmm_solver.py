@@ -219,10 +219,10 @@ def fmm_algorithm_circ(node_list, source_nodes):
                     neighbor.state          = 'TRIAL'
                     heap_push(neighbor, new_dist)
 
-        Save_Debug_Frame(node_list, current_node, node_virtual_source, frame_id)
-        frame_id += 1
+        #Save_Debug_Frame(node_list, current_node, node_virtual_source, frame_id)
+        #frame_id += 1
 
-    Make_GIF(folder="debug_frames", gif_name="front_source.gif")
+    #Make_GIF(folder="debug_frames", gif_name="front_source.gif")
 
 
 

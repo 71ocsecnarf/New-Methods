@@ -12,11 +12,11 @@ import fmm_solver
 # ---- Parameters to change geometry/algorithm ----
 # =================================================
 
-MESH_TYPE = 'l_shape'   # 'square_surface', 'l_shape', 'hole', 'cylinder', 'l_cylinder'
+MESH_TYPE = 'hole'   # 'square_surface', 'l_shape', 'hole', 'cylinder', 'l_cylinder'
 FMM_TYPE  = 'circ'      # 'standard' or 'circ' (higher-order circular-wavefront FMM)
 
 # N value to load from the pre-generated mesh library
-N = 11
+N = 76
 
 # -------------------------------------------------
 

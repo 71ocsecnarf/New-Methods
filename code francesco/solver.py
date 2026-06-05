@@ -546,14 +546,14 @@ def geodesic_l_cylinder(node_coords, source_coords, R, H):
     # Its interior boundary consists of two edges:
     #   Horizontal: z = H/2,  s in [0,     pi*R/2]
     #   Vertical:   s = pi*R/2, z in [H/2, H     ]
-    if _segment_crosses_missing_quadrant_2d(S2, P2, s_corner, H):
+    if segment_crosses_missing_quadrant_2d(S2, P2, s_corner, H):
         d_via_corner = (np.linalg.norm(S2 - C2) + np.linalg.norm(P2 - C2))
         return d_via_corner
 
     return np.linalg.norm(P2 - S2)
 
 
-def _segment_crosses_missing_quadrant_2d(S, P, s_corner, H):
+def segment_crosses_missing_quadrant_2d(S, P, s_corner, H):
     """
     Check whether the 2D segment S->P crosses the interior boundary of the
     missing quadrant  {s in [0, s_corner], z in [H/2, H]}.
@@ -745,8 +745,8 @@ def Plot_Isolines(node_list, element_list):
     x_line = np.linspace(0.2, 0.8, 100)
     y_line = (5/3) * (x_line - 0.2)
 
-    plt.plot(x_line, y_line, 'r--', linewidth=2)
-    plt.title("FMM - Plot of the levelsets")
+    #plt.plot(x_line, y_line, 'r--', linewidth=2)
+    plt.title("HFMM - Plot of the levelsets")
     plt.xlabel("X")
     plt.ylabel("Y")
     #plt.show()
@@ -837,7 +837,7 @@ def Plot_Isolines_3D(node_list, element_list, source_coords=None):
     sm.set_array([])
     fig.colorbar(sm, ax=ax, shrink=0.5, label="Geodesic distance")
 
-    ax.set_title("FMM - Distance field on cylinder")
+    ax.set_title("HFMM - Distance field on cylinder")
     ax.set_xlabel("X")
     ax.set_ylabel("Y")
     ax.set_zlabel("Z")
@@ -1063,14 +1063,19 @@ def Plot_Error_Field(node_list, element_list, mesh_type, true_source, L=1.0, R=0
     # Extraction of the error array using the existing mathematical functions
     if mesh_type == 'square_surface':
         _, _, errors, _ = compute_err(node_list, true_source)
+        name = "Square Surface"
     elif mesh_type == 'cylinder':
         _, errors, _ = compute_err_cylinder(node_list, true_source, R)
+        name = "Cylinder"
     elif mesh_type == 'l_shape':
         _, _, errors, _ = compute_err_l_shape(node_list, true_source, L)
+        name = "L-Shape"
     elif mesh_type == 'hole':
         _, _, errors, _ = compute_err_hole(node_list, true_source, L, R)
+        name = "Square with Hole"
     elif mesh_type == 'l_cylinder':
         _, _, errors, _ = compute_err_l_cylinder(node_list, true_source, R, L)
+        name = "L-Cylinder"
         # NOTE: L is repurposed as H (cylinder height) when called for l_cylinder
         
     triangles = np.array([[n.idx for n in e.nodes] for e in element_list])
@@ -1092,7 +1097,7 @@ def Plot_Error_Field(node_list, element_list, mesh_type, true_source, L=1.0, R=0
         sm.set_array([])
         fig.colorbar(sm, ax=ax, shrink=0.5, label="Absolute Error")
         
-        ax.set_title(f"Error Distribution - {mesh_type}")
+        ax.set_title(f"Error Distribution - {name}")
         ax.set_xlabel("X")
         ax.set_ylabel("Y")
         ax.set_zlabel("Z")
@@ -1109,7 +1114,7 @@ def Plot_Error_Field(node_list, element_list, mesh_type, true_source, L=1.0, R=0
         
         plt.triplot(x, y, triangles, color='black', alpha=0.1, linewidth=0.5)
         
-        plt.title(f"Error Distribution - {mesh_type}")
+        plt.title(f"Error Distribution - {name}")
         plt.xlabel("X")
         plt.ylabel("Y")
 
@@ -1171,7 +1176,7 @@ def Plot_Point_Convergence(h_values, point_errors_fmm, point_errors_circ,
     plt.legend(fontsize=8)
     plt.grid(True, which='both')
     plt.gca().invert_xaxis()
-    plt.ylim(bottom=1e-7)
+    plt.ylim(bottom=1e-5)
     plt.tight_layout()
 
     # Save under a distinct name to avoid overwriting the global convergence plot
